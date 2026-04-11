@@ -1,1 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kolam Koi - Natural Pond Edition</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            background: #0d1f0f;
+            font-family: 'Segoe UI', sans-serif;
+            cursor: none;
+        }
+        canvas { display: block; }
 
+        /* Custom cursor ripple */
+        #cursor-ripple {
+            position: fixed;
+            pointer-events: none;
+            z-index: 999;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(180,230,180,0.5);
+            transform: translate(-50%, -50%);
+            transition: transform 0.08s ease;
+        }
+
+        #ui-panel {
+            position: absolute; top: 20px; left: 20px; color: #d4ead4;
+            background: rgba(5, 18, 8, 0.72);
+            padding: 14px 18px;
+            border-radius: 10px;
+            border: 1px solid rgba(80, 160, 80, 0.25);
+            backdrop-filter: blur(12px);
+            z-index: 100;
+            font-size: 13px;
+        }
+        #ui-panel .hint {
+            font-size: 11px;
+            color: rgba(140, 210, 140, 0.8);
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+        #ui-panel strong { color: #8ed48e; }
+        input[type="file"] {
+            margin-top: 8px;
+            color: #8ed48e;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="cursor-ripple"></div>
+
+    <div id="ui-panel">
+        <div class="hint">🐟 Gerakkan kursor untuk memandu ikan</div>
+        <strong>Upload Gambarmu:</strong><br>
+        <input type="file" id="upload" accept="image/*">
+    </div>
+
+    <canvas id="koiCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('koiCanvas');
+const ctx = canvas.getContext('2d');
+const uploadInput = document.getElementById('upload');
+const cursorEl = document.getElementById('cursor-ripple');
+
+let width, height, koi;
+let mouse = { x: 0, y: 0 };
+let time = 0;
+let silhouettes = [];
+let vegetation = [];
+let pebbles = [];
+let ripples = [];
+let algaePatches = [];
+let lastRippleTime = 0;
+let offscreenBg = null; // cache background
+
+const SETTINGS = {
+    segments: 40,
+    segmentLength: 6,
+    headSmoothness: 0.05,
+    defaultImg: 'https://raw.githubusercontent.com/Agungandr/The-Zen-Canvas-Procedural-Koi/main/koibg2.png'
+};
+
+const koiImage = new Image();
+let isImageLoaded = false;
+
+koiImage.crossOrigin = 'anonymous';
+uploadInput.addEventListener('change', function(e) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        isImageLoaded = false;
+        koiImage.src = event.target.result;
+    };
+    if(e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+});
+koiImage.onload = () => { isImageLoaded = true; };
+koiImage.src = SETTINGS.defaultImg;
+
+// ─── RIPPLE CLASS ──────────────────────────────────────────────────────────────
+class Ripple {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.r = 2;
+        this.maxR = 60 + Math.random() * 40;
+        this.alpha = 0.5;
+        this.speed = 0.8 + Math.random() * 0.4;
+    }
+    update() {
+        this.r += this.speed;
+        this.alpha = 0.5 * (1 - this.r / this.maxR);
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y, this.r, this.r * 0.38, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(200, 240, 200, ${this.alpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // inner ring
+        if (this.r > 10) {
+            ctx.beginPath();
+            ctx.ellipse(this.x, this.y, this.r * 0.6, this.r * 0.6 * 0.38, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(200, 240, 200, ${this.alpha * 0.5})`;
+            ctx.stroke();
+        }
+    }
+    isDead() { return this.r >= this.maxR; }
+}
+
+// ─── KOI FISH CLASS ────────────────────────────────────────────────────────────
+class KoiFish {
+    constructor(isSilhouette = false) {
+        this.isSilhouette = isSilhouette;
+        this.points = [];
+        this.n = isSilhouette ? 25 : SETTINGS.segments;
+        this.len = isSilhouette ? 4 : SETTINGS.segmentLength;
+
+        const startX = Math.random() * window.innerWidth;
+        const startY = Math.random() * window.innerHeight;
+
+        for (let i = 0; i <= this.n; i++) {
+            this.points.push({ x: startX, y: startY });
+        }
+
+        this.waveTime = Math.random() * 100;
+        this.scale = isSilhouette ? (Math.random() * 0.4 + 0.2) : 1.3;
+        this.offsetY = Math.random() * 500;
+        this.depth = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
+        // Arah kepala saat ini (radian) — untuk steering limit
+        this.headAngle = Math.random() * Math.PI * 2;
+        // Kecepatan gerak kepala
+        this.speed = isSilhouette ? 0 : 2.5;
+    }
+
+    update(target) {
+        this.waveTime += 0.1;
+        const head = this.points[0];
+
+        if (this.isSilhouette) {
+            head.x = (width / 2) + Math.cos(time * 0.2 + this.offsetY) * (width * 0.4);
+            head.y = (height / 2) + Math.sin(time * 0.3 + this.offsetY) * (height * 0.3);
+        } else {
+            // Hitung sudut ke target
+            const dx = target.x - head.x;
+            const dy = target.y - head.y;
+            const targetAngle = Math.atan2(dy, dx);
+
+            // Batas putar per frame — ikan tidak bisa U-turn langsung
+            const MAX_TURN = 0.045; // ~2.6° per frame
+
+            // Selisih sudut terpendek (normalkan ke -π..π)
+            let diff = targetAngle - this.headAngle;
+            while (diff >  Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+
+            // Clamp belok
+            this.headAngle += Math.max(-MAX_TURN, Math.min(MAX_TURN, diff));
+
+            // Maju searah headAngle
+            head.x += Math.cos(this.headAngle) * this.speed;
+            head.y += Math.sin(this.headAngle) * this.speed;
+        }
+
+        for (let i = 1; i < this.points.length; i++) {
+            const p = this.points[i], prev = this.points[i - 1];
+            let angle = Math.atan2(p.y - prev.y, p.x - prev.x);
+            let wave = Math.sin(this.waveTime - i * 0.2) * (this.isSilhouette ? 0.05 : 0.1);
+            angle += wave * (i / this.n);
+            p.x = prev.x + Math.cos(angle) * this.len;
+            p.y = prev.y + Math.sin(angle) * this.len;
+        }
+    }
+
+    draw() {
+        if (this.isSilhouette) {
+            const alpha = 0.12 + this.depth * 0.15;
+            ctx.beginPath();
+            ctx.lineWidth = 18 * this.scale;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = `rgba(15, 35, 18, ${alpha})`;
+            ctx.moveTo(this.points[0].x, this.points[0].y);
+            for (let p of this.points) ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.lineWidth = 6 * this.scale;
+            ctx.strokeStyle = `rgba(60, 100, 60, ${alpha * 0.4})`;
+            ctx.moveTo(this.points[0].x, this.points[0].y);
+            for (let p of this.points) ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+        } else if (isImageLoaded) {
+            const imgW = koiImage.width, imgH = koiImage.height;
+            const sliceW = imgW / (this.points.length - 1);
+            for (let i = 0; i < this.points.length - 1; i++) {
+                const p = this.points[i], pNext = this.points[i + 1];
+                const angle = Math.atan2(pNext.y - p.y, pNext.x - p.x);
+                const dist = Math.hypot(pNext.x - p.x, pNext.y - p.y);
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(angle);
+                const dw = (dist + 1.5) * this.scale;
+                const dh = imgH * (this.len / sliceW) * this.scale;
+                ctx.drawImage(koiImage, i * sliceW, 0, sliceW, imgH, -0.5, -dh / 2, dw, dh);
+                ctx.restore();
+            }
+        }
+    }
+}
+
+// ─── PLANT CLASS ───────────────────────────────────────────────────────────────
+class Plant {
+    constructor(x) {
+        this.x = x !== undefined ? x : Math.random() * width;
+        this.h = Math.random() * 180 + 80;
+        this.offset = Math.random() * 100;
+        this.segments = 12;
+        // warna tumbuhan: hijau tua hingga hijau kecoklatan
+        const hue = 90 + Math.random() * 40;
+        const sat = 30 + Math.random() * 25;
+        const light = 12 + Math.random() * 15;
+        this.color = `hsl(${hue}, ${sat}%, ${light}%)`;
+        this.width = 2 + Math.random() * 3;
+        // Beberapa tanaman punya 2–3 cabang
+        this.branches = Math.floor(Math.random() * 2) + 1;
+    }
+    drawStem(baseX, speed) {
+        ctx.beginPath();
+        ctx.moveTo(baseX, height);
+        for (let i = 1; i <= this.segments; i++) {
+            let y = height - (i * this.h / this.segments);
+            let x = baseX + Math.sin(time * speed + this.offset + i * 0.25) * (i * 1.8);
+            ctx.lineTo(x, y);
+        }
+        ctx.lineWidth = this.width;
+        ctx.strokeStyle = this.color;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    }
+    draw() {
+        for (let b = 0; b < this.branches; b++) {
+            this.drawStem(this.x + b * 8, 0.5 + b * 0.2);
+        }
+    }
+}
+
+// ─── PEBBLE CLASS ──────────────────────────────────────────────────────────────
+class Pebble {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = height * 0.6 + Math.random() * height * 0.45;
+        this.rx = 4 + Math.random() * 14;
+        this.ry = this.rx * (0.5 + Math.random() * 0.4);
+        this.angle = Math.random() * Math.PI;
+        // abu-abu kecoklatan natural
+        const l = 14 + Math.random() * 18;
+        const h = 80 + Math.random() * 60;
+        this.fill = `hsl(${h}, 10%, ${l}%)`;
+        this.stroke = `hsl(${h}, 8%, ${l - 5}%)`;
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.rx, this.ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = this.fill;
+        ctx.fill();
+        ctx.strokeStyle = this.stroke;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// ─── ALGAE PATCH ───────────────────────────────────────────────────────────────
+class AlgaePatch {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = height * 0.5 + Math.random() * height * 0.5;
+        this.r = 20 + Math.random() * 50;
+        this.alpha = 0.06 + Math.random() * 0.1;
+    }
+    draw() {
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+        grad.addColorStop(0, `rgba(30, 80, 25, ${this.alpha})`);
+        grad.addColorStop(1, `rgba(30, 80, 25, 0)`);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+    }
+}
+
+// ─── BACKGROUND (cached offscreen) ────────────────────────────────────────────
+function buildStaticBackground() {
+    const off = document.createElement('canvas');
+    off.width = width; off.height = height;
+    const octx = off.getContext('2d');
+
+    // --- Gradien dasar: hijau kekeruhan kolam ---
+    const base = octx.createLinearGradient(0, 0, 0, height);
+    base.addColorStop(0,   '#1c3d1e'); // permukaan: hijau tua
+    base.addColorStop(0.3, '#152e14'); // tengah
+    base.addColorStop(0.65,'#0f2210'); // bawah tengah
+    base.addColorStop(1,   '#080f08'); // dasar: hampir hitam
+
+    octx.fillStyle = base;
+    octx.fillRect(0, 0, width, height);
+
+    // --- Kilau samping (sisi kolam lebih gelap, tengah sedikit terang) ---
+    const vign = octx.createRadialGradient(width/2, height*0.3, 60, width/2, height*0.4, width*0.8);
+    vign.addColorStop(0,   'rgba(40, 80, 35, 0.18)');
+    vign.addColorStop(0.5, 'rgba(20, 50, 20, 0.08)');
+    vign.addColorStop(1,   'rgba(0, 0, 0, 0.55)');
+    octx.fillStyle = vign;
+    octx.fillRect(0, 0, width, height);
+
+    // --- Bintik-bintik sedimen / partikel organik di dalam air ---
+    octx.globalAlpha = 1;
+    for (let i = 0; i < 340; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pr = 0.4 + Math.random() * 1.4;
+        const pa = 0.04 + Math.random() * 0.12;
+        octx.beginPath();
+        octx.arc(px, py, pr, 0, Math.PI * 2);
+        octx.fillStyle = `rgba(100, 160, 80, ${pa})`;
+        octx.fill();
+    }
+
+    // --- Bebatuan (digambar di dasar) ---
+    pebbles.forEach(p => {
+        octx.save();
+        octx.translate(p.x, p.y);
+        octx.rotate(p.angle);
+        octx.beginPath();
+        octx.ellipse(0, 0, p.rx, p.ry, 0, 0, Math.PI * 2);
+        octx.fillStyle = p.fill;
+        octx.fill();
+        octx.strokeStyle = p.stroke;
+        octx.lineWidth = 0.5;
+        octx.stroke();
+        octx.restore();
+    });
+
+    // --- Algae patch statis ---
+    algaePatches.forEach(a => {
+        const grad = octx.createRadialGradient(a.x, a.y, 0, a.x, a.y, a.r);
+        grad.addColorStop(0, `rgba(30, 80, 25, ${a.alpha})`);
+        grad.addColorStop(1, `rgba(30, 80, 25, 0)`);
+        octx.beginPath();
+        octx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+        octx.fillStyle = grad;
+        octx.fill();
+    });
+
+    return off;
+}
+
+// ─── CAUSTICS (refraksi cahaya permukaan air) ─────────────────────────────────
+function drawCaustics() {
+    ctx.globalCompositeOperation = 'screen';
+    // Beberapa blob cahaya yang bergerak pelan
+    for (let i = 0; i < 7; i++) {
+        const bx = (width * (i + 0.5) / 7) + Math.sin(time * 0.3 + i * 1.2) * 80;
+        const by = height * 0.25 + Math.cos(time * 0.25 + i * 0.9) * (height * 0.15);
+        const r  = 120 + Math.sin(time + i) * 40;
+        const causticGrad = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+        causticGrad.addColorStop(0,   'rgba(120, 200, 100, 0.04)');
+        causticGrad.addColorStop(0.5, 'rgba(80, 160, 60, 0.02)');
+        causticGrad.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.fillStyle = causticGrad;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, r, r * 0.55, Math.sin(time * 0.1 + i) * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Kilatan kecil caustics
+    for (let i = 0; i < 10; i++) {
+        const cx = (width * i / 9) + Math.sin(time * 0.6 + i * 2.3) * 120;
+        const cy = height * 0.1 + Math.cos(time * 0.5 + i * 1.7) * (height * 0.22);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 18 + Math.sin(time + i) * 8, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(150, 220, 120, 0.018)';
+        ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// ─── WATER SURFACE SHIMMER ─────────────────────────────────────────────────────
+function drawSurfaceShimmer() {
+    // Garis-garis refleksi tipis di permukaan atas
+    ctx.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 6; i++) {
+        const sy = height * 0.02 + i * height * 0.03 + Math.sin(time * 0.4 + i) * 10;
+        const sx = Math.sin(time * 0.2 + i * 1.5) * width * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo(
+            sx + width * 0.2, sy - 4,
+            sx + width * 0.5, sy + 3,
+            sx + width * 0.75, sy - 2
+        );
+        ctx.lineWidth = 0.8 + Math.sin(time + i) * 0.4;
+        ctx.strokeStyle = `rgba(180, 230, 160, ${0.04 + Math.sin(time * 0.3 + i) * 0.02})`;
+        ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// ─── INIT ──────────────────────────────────────────────────────────────────────
+function init() {
+    width  = canvas.width  = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    mouse.x = width / 2;
+    mouse.y = height / 2;
+
+    koi = new KoiFish(false);
+    silhouettes = Array.from({ length: 4 }, () => new KoiFish(true));
+
+    // Tanaman: kluster di tepi kiri, kanan, bawah
+    vegetation = [];
+    for (let i = 0; i < 8;  i++) vegetation.push(new Plant(Math.random() * width * 0.18));
+    for (let i = 0; i < 8;  i++) vegetation.push(new Plant(width * 0.82 + Math.random() * width * 0.18));
+    for (let i = 0; i < 20; i++) vegetation.push(new Plant()); // tengah/acak
+
+    // Bebatuan & algae
+    pebbles = Array.from({ length: 90 }, () => new Pebble());
+    algaePatches = Array.from({ length: 18 }, () => new AlgaePatch());
+
+    offscreenBg = buildStaticBackground();
+    ripples = [];
+}
+
+// ─── ANIMATE ───────────────────────────────────────────────────────────────────
+function animate() {
+    time += 0.018;
+
+    // Gambar background statis (cached)
+    ctx.drawImage(offscreenBg, 0, 0);
+
+    // 1. Siluet ikan di kedalaman
+    silhouettes.forEach(s => { s.update(); s.draw(); });
+
+    // 2. Tanaman belakang (setengah pertama)
+    vegetation.slice(0, Math.floor(vegetation.length / 2)).forEach(p => p.draw());
+
+    // 3. Ikan utama
+    if (koi) { koi.update(mouse); koi.draw(); }
+
+    // 4. Tanaman depan
+    vegetation.slice(Math.floor(vegetation.length / 2)).forEach(p => p.draw());
+
+    // 5. Ripple di posisi mouse (periodik)
+    if (time - lastRippleTime > 0.8) {
+        ripples.push(new Ripple(mouse.x, mouse.y));
+        lastRippleTime = time;
+    }
+    ripples = ripples.filter(r => !r.isDead());
+    ripples.forEach(r => { r.update(); r.draw(); });
+
+    // 6. Cahaya caustics
+    drawCaustics();
+
+    // 7. Kilau permukaan
+    drawSurfaceShimmer();
+
+    // 8. Vignette overlay tipis (tepi gelap)
+    const vign2 = ctx.createRadialGradient(width/2, height/2, height*0.25, width/2, height/2, width*0.8);
+    vign2.addColorStop(0,   'rgba(0,0,0,0)');
+    vign2.addColorStop(1,   'rgba(0, 5, 0, 0.45)');
+    ctx.fillStyle = vign2;
+    ctx.fillRect(0, 0, width, height);
+
+    requestAnimationFrame(animate);
+}
+
+// ─── EVENTS ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', init);
+
+window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    cursorEl.style.left = e.clientX + 'px';
+    cursorEl.style.top  = e.clientY + 'px';
+});
+
+canvas.addEventListener('click', e => {
+    for (let i = 0; i < 3; i++) {
+        setTimeout(() => ripples.push(new Ripple(e.clientX, e.clientY)), i * 120);
+    }
+});
+
+init();
+animate();
+</script>
+</body>
+</html>
