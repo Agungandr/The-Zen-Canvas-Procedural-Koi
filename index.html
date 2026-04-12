@@ -137,14 +137,15 @@ const ctx = canvas.getContext('2d');
 const uploadInput = document.getElementById('upload');
 const cursorEl = document.getElementById('cursor-ripple');
 
-let width, height, koi;
+let width, height;
+let fishes  = [];   // semua ikan real (termasuk ikan utama index 0)
 let mouse = { x: 0, y: 0 };
 let time = 0;
 let silhouettes = [];
 let vegetation = [];
 let pebbles = [];
 let ripples = [];
-let pellets = [];       // pelet makanan
+let pellets = [];
 let algaePatches = [];
 let lastRippleTime = 0;
 let offscreenBg = null;
@@ -282,7 +283,7 @@ class Pellet {
             return;
         }
         // Kurangi nyawa pelet setiap frame
-            this.life--;
+        this.life--;
         // Fade in
         if (this.alpha < 1) this.alpha = Math.min(1, this.alpha + 0.08);
 
@@ -349,39 +350,42 @@ class Pellet {
     isReady() { return !this.sinking && !this.eaten; }
 }
 class KoiFish {
-    constructor(isSilhouette = false) {
+    // isLeader = true → ikan utama (follow mouse kuat)
+    // isLeader = false → ikan kawanan (flocking + feeding)
+    constructor(isSilhouette = false, isLeader = false) {
         this.isSilhouette = isSilhouette;
+        this.isLeader     = isLeader;
+        // Kawanan pakai segmen lebih sedikit → performa lebih ringan
+        this.n   = isSilhouette ? 20 : (isLeader ? SETTINGS.segments : 15);
+        this.len = isSilhouette ? 4  : SETTINGS.segmentLength;
+
+        this.waveTime    = Math.random() * 100;
+        this.scale       = isSilhouette ? (Math.random() * 0.4 + 0.2)
+                         : (isLeader    ? 1.3 : 0.75 + Math.random() * 0.3);
+        this.offsetY     = Math.random() * 500;
+        this.depth       = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
+        this.headAngle   = Math.random() * Math.PI * 2;
+        this.wanderAngle = this.headAngle;
+        this.speed       = isSilhouette ? 0 : (isLeader ? 2.5 : 1.8 + Math.random() * 0.6);
+        this.tintHue     = isLeader ? 0 : (Math.random() * 60 - 30);
+
+        // Inisialisasi points sementara (akan di-overwrite saat spawn)
+        const startX = Math.random() * (window.innerWidth  || 800);
+        const startY = Math.random() * (window.innerHeight || 600);
         this.points = [];
-        this.n = isSilhouette ? 25 : SETTINGS.segments;
-        this.len = isSilhouette ? 4 : SETTINGS.segmentLength;
-
-        const startX = Math.random() * window.innerWidth;
-        const startY = Math.random() * window.innerHeight;
-
         for (let i = 0; i <= this.n; i++) {
             this.points.push({ x: startX, y: startY });
         }
 
-        this.waveTime = Math.random() * 100;
-        this.scale = isSilhouette ? (Math.random() * 0.4 + 0.2) : 1.3;
-        this.offsetY = Math.random() * 500;
-        this.depth = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
-        this.headAngle = Math.random() * Math.PI * 2;
-        this.speed = isSilhouette ? 0 : 2.5;
-
-        // Spawn dari luar layar dalam formasi garis lurus
-        // agar slice tidak numpuk saat pertama muncul
+        // Spawn dari luar layar
         if (!isSilhouette) {
-            // Pilih sisi layar secara acak (kiri/kanan/atas/bawah)
             const side = Math.floor(Math.random() * 4);
             let spawnX, spawnY;
-            if (side === 0)      { spawnX = -80;          spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = 0; }
+            if      (side === 0) { spawnX = -80;           spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = 0; }
             else if (side === 1) { spawnX = (window.innerWidth || 800) + 80; spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = Math.PI; }
-            else if (side === 2) { spawnX = Math.random() * (window.innerWidth || 800);  spawnY = -80; this.headAngle = Math.PI / 2; }
-            else                 { spawnX = Math.random() * (window.innerWidth || 800);  spawnY = (window.innerHeight || 600) + 80; this.headAngle = -Math.PI / 2; }
+            else if (side === 2) { spawnX = Math.random() * (window.innerWidth || 800); spawnY = -80; this.headAngle = Math.PI / 2; }
+            else                 { spawnX = Math.random() * (window.innerWidth || 800); spawnY = (window.innerHeight || 600) + 80; this.headAngle = -Math.PI / 2; }
 
-            // Susun semua points dalam garis lurus searah headAngle
-            // sehingga ikan langsung punya bentuk memanjang yang benar
             this.points = [];
             for (let i = 0; i <= this.n; i++) {
                 this.points.push({
@@ -391,18 +395,81 @@ class KoiFish {
             }
         }
 
-        // ── Feeding mode ──────────────────────────────────────────────────────
+        // Feeding mode
         this.feedTarget  = null;
         this.feedMode    = false;
         this.eatCooldown = 0;
     }
 
-    // Cari pelet terdekat yang sudah mengapung (siap dimakan)
+    // Flocking — hanya hitung setiap 3 frame (hemat CPU)
+    _flockSteering() {
+        if (this._flockFrame === undefined) this._flockFrame = 0;
+        this._flockFrame++;
+        if (this._flockFrame % 3 !== 0) return this._lastFlockSteer || 0;
+
+        const head = this.points[0];
+        const RADIUS_SEP   = 80;
+        const RADIUS_FLOCK = 200;
+
+        let sepX = 0, sepY = 0, sepCount = 0;
+        let aliX = 0, aliY = 0, aliCount = 0;
+        let cohX = 0, cohY = 0, cohCount = 0;
+
+        for (const other of fishes) {
+            if (other === this) continue;
+            const ox = other.points[0].x, oy = other.points[0].y;
+            const d  = Math.hypot(ox - head.x, oy - head.y);
+            if (d < RADIUS_SEP && d > 0) {
+                sepX += (head.x - ox) / d;
+                sepY += (head.y - oy) / d;
+                sepCount++;
+            }
+            if (d < RADIUS_FLOCK) {
+                aliX += Math.cos(other.headAngle);
+                aliY += Math.sin(other.headAngle);
+                aliCount++;
+                cohX += ox; cohY += oy; cohCount++;
+            }
+        }
+
+        let steer = 0;
+        if (sepCount > 0) {
+            const a = Math.atan2(sepY / sepCount, sepX / sepCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.6;
+        }
+        if (aliCount > 0) {
+            const a = Math.atan2(aliY / aliCount, aliX / aliCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.15;
+        }
+        if (cohCount > 0) {
+            const a = Math.atan2(cohY / cohCount - head.y, cohX / cohCount - head.x);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.08;
+        }
+
+        this._lastFlockSteer = steer;
+        return steer;
+    }
+
+    // Cari pelet terdekat yang siap dimakan DAN belum dikejar ikan lain
     _findNearestPellet() {
         const head = this.points[0];
+        // Kumpulkan pelet yang sudah diklaim ikan lain
+        const claimed = new Set(
+            fishes.filter(f => f !== this && f.feedTarget).map(f => f.feedTarget)
+        );
         let best = null, bestDist = Infinity;
         for (const p of pellets) {
             if (!p.isReady()) continue;
+            if (claimed.has(p)) continue;  // sudah dikejar ikan lain
             const d = Math.hypot(p.x - head.x, p.y - head.y);
             if (d < bestDist) { bestDist = d; best = p; }
         }
@@ -417,70 +484,85 @@ class KoiFish {
             head.x = (width / 2) + Math.cos(time * 0.2 + this.offsetY) * (width * 0.4);
             head.y = (height / 2) + Math.sin(time * 0.3 + this.offsetY) * (height * 0.3);
         } else {
-            // ── Tentukan target gerak ──────────────────────────────────────────
             if (this.eatCooldown > 0) this.eatCooldown--;
 
-            // Cek apakah ada pelet siap dimakan
             const nearPellet = this._findNearestPellet();
+            let destAngle;
+
+            // --- LOGIKA PEMISAHAN TARGET ---
             if (nearPellet && this.eatCooldown === 0) {
-                this.feedMode   = true;
+                // Semua ikan (Utama & Kawanan) akan mengejar pelet jika ada
+                this.feedMode = true; 
                 this.feedTarget = nearPellet;
-            } else if (!nearPellet) {
-                this.feedMode   = false;
-                this.feedTarget = null;
-            }
-
-            // Pilih destination: pelet atau mouse
-            let destX, destY;
-            if (this.feedMode && this.feedTarget) {
-                destX = this.feedTarget.x;
-                destY = this.feedTarget.y;
+                const dx = this.feedTarget.x - head.x;
+                const dy = this.feedTarget.y - head.y;
+                destAngle = Math.atan2(dy, dx);
+            } else if (this.isLeader) {
+                // HANYA ikan utama yang mengikuti mouse
+                this.feedMode = false;
+                destAngle = Math.atan2(target.y - head.y, target.x - head.x);
             } else {
-                destX = target.x;
-                destY = target.y;
+                // Kawanan akan berenang bebas (Flocking) tanpa mempedulikan mouse
+                this.feedMode = false;
+                const flockSteer = this._flockSteering();
+                // Kawanan hanya menggunakan steering dari kelompoknya saja
+                destAngle = this.headAngle + flockSteer;
             }
 
-            // Kecepatan lebih cepat saat feeding
+            // Kecepatan
             const curSpeed = this.feedMode ? this.speed * 1.55 : this.speed;
 
-            const dx = destX - head.x;
-            const dy = destY - head.y;
-            const dist = Math.hypot(dx, dy);
-
-            // Makan jika cukup dekat
-            if (this.feedMode && this.feedTarget && dist < 14) {
-                this.feedTarget.eaten = true;
-                this.feedTarget       = null;
-                this.feedMode         = false;
-                this.eatCooldown      = 80; // ~1.3 detik jeda
-                // Ripple saat makan
-                ripples.push(new Ripple(head.x, head.y));
+            // Logika Makan
+            if (this.feedMode && this.feedTarget) {
+                const dist = Math.hypot(this.feedTarget.x - head.x, this.feedTarget.y - head.y);
+                if (dist < 22) {
+                    this.feedTarget.eaten = true;
+                    this.feedTarget = null;
+                    this.feedMode = false;
+                    this.eatCooldown = 80;
+                    ripples.push(new Ripple(head.x, head.y));
+                }
             }
 
-            const MAX_TURN = this.feedMode ? 0.065 : 0.045;
-
-            const targetAngle = Math.atan2(dy, dx);
-            let diff = targetAngle - this.headAngle;
-            while (diff >  Math.PI) diff -= Math.PI * 2;
+            // Pergerakan Sudut
+            let diff = destAngle - this.headAngle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
-            this.headAngle += Math.max(-MAX_TURN, Math.min(MAX_TURN, diff));
+            
+            const turnSpeed = this.isLeader ? 0.045 : 0.035; // Leader sedikit lebih lincah
+            this.headAngle += Math.max(-turnSpeed, Math.min(turnSpeed, diff));
 
-            // Melambat sedikit saat sudah sangat dekat dengan pelet
-            const approachFactor = this.feedMode ? Math.min(1, dist / 40) : 1;
-            head.x += Math.cos(this.headAngle) * curSpeed * Math.max(0.3, approachFactor);
-            head.y += Math.sin(this.headAngle) * curSpeed * Math.max(0.3, approachFactor);
+            head.x += Math.cos(this.headAngle) * curSpeed;
+            head.y += Math.sin(this.headAngle) * curSpeed;
+
+            // Boundary Wrap (Muncul dari sisi lain layar)
+            const margin = 100;
+            if (head.x < -margin) head.x = width + margin;
+            if (head.x > width + margin) head.x = -margin;
+            if (head.y < -margin) head.y = height + margin;
+            if (head.y > height + margin) head.y = -margin;
         }
 
+        // FABRIK / Follower segments
         for (let i = 1; i < this.points.length; i++) {
             const p = this.points[i], prev = this.points[i - 1];
             let angle = Math.atan2(p.y - prev.y, p.x - prev.x);
-            // Ikan sedikit lebih aktif meliuk saat mode makan
-            const waveAmp = this.feedMode ? 0.13 : 0.1;
-            let wave = Math.sin(this.waveTime - i * 0.2) * (this.isSilhouette ? 0.05 : waveAmp);
-            angle += wave * (i / this.n);
+            const waveAmp = this.feedMode ? 0.11 : 0.085;
+            const frontDamp = Math.min(1, i / 8);
+            let wave = Math.sin(this.waveTime - i * 0.2) * (this.isSilhouette ? 0.05 : waveAmp) * (i / this.n) * frontDamp;
+            angle += wave;
             p.x = prev.x + Math.cos(angle) * this.len;
             p.y = prev.y + Math.sin(angle) * this.len;
         }
+
+        // Smoothing Pass (Tetap dipertahankan agar tidak patah)
+        if (!this.isSilhouette) {
+            for (let i = 1; i < this.points.length - 1; i++) {
+                this.points[i].x = this.points[i].x * 0.85 + (this.points[i-1].x + this.points[i+1].x) * 0.075;
+                this.points[i].y = this.points[i].y * 0.85 + (this.points[i-1].y + this.points[i+1].y) * 0.075;
+            }
+        }
+
     }
 
     // ── Sirip punggung (dorsal fin) — satu-satunya yang di-generate ──────────
@@ -562,24 +644,51 @@ class KoiFish {
             for (let p of this.points) ctx.lineTo(p.x, p.y);
             ctx.stroke();
         } else if (isImageLoaded) {
-            // 1. Dorsal fin (di bawah tubuh agar terlihat tumbuh dari punggung)
-            this._drawDorsalFin();
+            ctx.save();
+            
+            // kita gunakan transparansi agar warna ikan berbaur dengan air.
+            ctx.globalAlpha = this.isLeader ? 0.9 : 0.7; // Ikan kawanan lebih transparan (lebih dalam)
+            // Memberikan variasi warna pada ikan kawanan
+            if (this.tintHue !== 0) {
+                ctx.filter = `hue-rotate(${this.tintHue}deg) saturate(1.1)`;
+            }
 
-            // 2. Tubuh utama (slice gambar)
+            // --- FILTER LEADER: Sirip Punggung hanya untuk Ikan Utama ---
+            if (this.isLeader) {
+                this._drawDorsalFin();
+            }
+
             const imgW = koiImage.width, imgH = koiImage.height;
             const sliceW = imgW / (this.points.length - 1);
+            
             for (let i = 0; i < this.points.length - 1; i++) {
                 const p = this.points[i], pNext = this.points[i + 1];
                 const angle = Math.atan2(pNext.y - p.y, pNext.x - p.x);
                 const dist  = Math.hypot(pNext.x - p.x, pNext.y - p.y);
+                
                 ctx.save();
                 ctx.translate(p.x, p.y);
                 ctx.rotate(angle);
+                
+                // RUMUS STABIL:
+                // dw: Jarak antar tulang + sedikit overlap (1.5) agar tidak bolong
+                // dh: Tinggi gambar dikali skala ikan (ini kunci agar tidak gepeng)
                 const dw = (dist + 1.5) * this.scale;
-                const dh = imgH * (this.len / sliceW) * this.scale;
-                ctx.drawImage(koiImage, i * sliceW, 0, sliceW, imgH, -0.5, -dh / 2, dw, dh);
+                const dh = imgH * (this.len / (imgW / this.n)) * this.scale;
+                
+                // Jika rumus dh di atas masih terasa aneh, gunakan cadangan yang lebih simpel:
+                // const dh = imgH * (this.isLeader ? 1.3 : 1.0) * this.scale;
+
+                ctx.drawImage(
+                    koiImage, 
+                    i * sliceW, 0, sliceW, imgH, // Potongan sumber (Source)
+                    -0.5, -dh / 2, dw, dh         // Gambar di canvas (Destination)
+                );
                 ctx.restore();
             }
+
+            ctx.restore();
+            ctx.globalAlpha = 1.0
         }
     }
 }
@@ -792,17 +901,22 @@ function init() {
     mouse.x = width / 2;
     mouse.y = height / 2;
 
-    koi = new KoiFish(false);
-    silhouettes = Array.from({ length: 4 }, () => new KoiFish(true));
+    // Ikan: 1 leader + 3 kawanan
+    fishes = [
+        new KoiFish(false, true),   // leader — follow mouse
+        new KoiFish(false, false),  // kawanan
+        new KoiFish(false, false),  // kawanan
+        new KoiFish(false, false),  // kawanan
+    ];
 
-    // Tanaman: kluster di tepi kiri, kanan, bawah
+    silhouettes = Array.from({ length: 2 }, () => new KoiFish(true, false));
+
     vegetation = [];
     for (let i = 0; i < 8;  i++) vegetation.push(new Plant(Math.random() * width * 0.18));
     for (let i = 0; i < 8;  i++) vegetation.push(new Plant(width * 0.82 + Math.random() * width * 0.18));
-    for (let i = 0; i < 20; i++) vegetation.push(new Plant()); // tengah/acak
+    for (let i = 0; i < 20; i++) vegetation.push(new Plant());
 
-    // Bebatuan & algae
-    pebbles = Array.from({ length: 90 }, () => new Pebble());
+    pebbles      = Array.from({ length: 90 }, () => new Pebble());
     algaePatches = Array.from({ length: 18 }, () => new AlgaePatch());
 
     offscreenBg = buildStaticBackground();
@@ -822,19 +936,19 @@ function animate() {
     // 2. Tanaman belakang (setengah pertama)
     vegetation.slice(0, Math.floor(vegetation.length / 2)).forEach(p => p.draw());
 
-    // 3. Ikan utama + hitung kecepatan untuk audio
-    if (koi) {
-        koi.update(mouse);
-        koi.draw();
+    // 3. Semua ikan real + hitung kecepatan leader untuk audio
+    fishes.forEach(fish => {
+        fish.update(mouse);
+        fish.draw();
+    });
 
-        // Hitung kecepatan kepala ikan (jarak per frame)
-        const head = koi.points[0];
-        if (!koi._prevHead) koi._prevHead = { x: head.x, y: head.y };
-        const fishSpeed = Math.hypot(head.x - koi._prevHead.x, head.y - koi._prevHead.y);
-        koi._prevHead = { x: head.x, y: head.y };
-        // Normalize: kecepatan normal ~2.5, feeding ~4 → range 0..1
-        const normalizedSpeed = Math.min(1, fishSpeed / 5);
-        updateAudioSpeed(normalizedSpeed);
+    // Audio: pakai kecepatan leader (ikan[0])
+    if (fishes.length > 0) {
+        const head = fishes[0].points[0];
+        if (!fishes[0]._prevHead) fishes[0]._prevHead = { x: head.x, y: head.y };
+        const fishSpeed = Math.hypot(head.x - fishes[0]._prevHead.x, head.y - fishes[0]._prevHead.y);
+        fishes[0]._prevHead = { x: head.x, y: head.y };
+        updateAudioSpeed(Math.min(1, fishSpeed / 5));
     }
 
     // 4. Tanaman depan
