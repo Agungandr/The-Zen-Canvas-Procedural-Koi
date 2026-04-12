@@ -210,6 +210,7 @@ const SETTINGS = {
     segments: 40,
     segmentLength: 6,
     headSmoothness: 0.05,
+    maxPellets: 15, // Tambahkan ini: maksimal 15 pelet di layar
     defaultImg: 'https://raw.githubusercontent.com/Agungandr/The-Zen-Canvas-Procedural-Koi/main/koibg2.png'
 };
 
@@ -270,6 +271,7 @@ class Pellet {
         this.eaten = false;
         this.alpha = 0;         // fade-in saat pertama muncul
         this.eatAnim = 0;       // 0..1 saat dimakan (shrink)
+        this.life = 1000;
         // warna pelet: coklat kemerahan seperti pelet ikan asli
         this.hue = 22 + Math.random() * 14;
     }
@@ -279,6 +281,8 @@ class Pellet {
             this.eatAnim += 0.12;
             return;
         }
+        // Kurangi nyawa pelet setiap frame
+            this.life--;
         // Fade in
         if (this.alpha < 1) this.alpha = Math.min(1, this.alpha + 0.08);
 
@@ -339,7 +343,9 @@ class Pellet {
         ctx.restore();
     }
 
-    isDead()  { return this.eaten && this.eatAnim >= 1; }
+    isDead() { 
+        return (this.eaten && this.eatAnim >= 1) || this.life <= 0; 
+    }
     isReady() { return !this.sinking && !this.eaten; }
 }
 class KoiFish {
@@ -878,15 +884,19 @@ window.addEventListener('click',    startAudioOnce, { once: true });
 window.addEventListener('keydown',  startAudioOnce, { once: true });
 
 canvas.addEventListener('click', e => {
-    // Spawn 3–5 pelet di posisi klik dengan sedikit scatter
+    // Cek jika jumlah pelet sudah mencapai batas maksimal
+    if (pellets.length >= SETTINGS.maxPellets) return;
+
     const count = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < count; i++) {
-        const scatter = 18;
-        const px = e.clientX + (Math.random() - 0.5) * scatter;
-        const py = e.clientY + (Math.random() - 0.5) * scatter;
-        pellets.push(new Pellet(px, py));
-        // Ripple kecil saat pelet jatuh (delay per pelet)
-        setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        // Cek lagi di dalam loop agar tidak melampaui batas saat spawn berkelompok
+        if (pellets.length < SETTINGS.maxPellets) {
+            const scatter = 18;
+            const px = e.clientX + (Math.random() - 0.5) * scatter;
+            const py = e.clientY + (Math.random() - 0.5) * scatter;
+            pellets.push(new Pellet(px, py));
+            setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        }
     }
 });
 
@@ -903,14 +913,19 @@ canvas.addEventListener('touchstart', e => {
     startAudioOnce();
     handleTouch(e);
     const t = e.touches[0];
-    // Spawn pelet di posisi sentuh
+
+    // Tambahkan pengecekan limit di sini
+    if (pellets.length >= SETTINGS.maxPellets) return;
+
     const count = 3 + Math.floor(Math.random() * 3);
     for (let i = 0; i < count; i++) {
-        const scatter = 18;
-        const px = t.clientX + (Math.random() - 0.5) * scatter;
-        const py = t.clientY + (Math.random() - 0.5) * scatter;
-        pellets.push(new Pellet(px, py));
-        setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        if (pellets.length < SETTINGS.maxPellets) {
+            const scatter = 18;
+            const px = t.clientX + (Math.random() - 0.5) * scatter;
+            const py = t.clientY + (Math.random() - 0.5) * scatter;
+            pellets.push(new Pellet(px, py));
+            setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        }
     }
 }, { passive: false });
 
