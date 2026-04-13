@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kolam Koi - Natural Pond Edition</title>
+    <title>Kolam Koi - Natural Pond Edition (Lite)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -113,7 +113,22 @@
     <div id="ui-panel">
         <div class="hint">🐟 Gerakkan kursor · <b>Klik</b> untuk beri makan & aktifkan suara</div>
         <strong>Upload Gambar Ikan:</strong><br>
-        <input type="file" id="upload" accept="image/*">
+        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+            <input type="file" id="upload" accept="image/*" style="margin-top:0;">
+            <button id="btn-reset" onclick="resetToDefault()" style="
+                display: none;
+                background: rgba(60,20,20,0.7);
+                border: 1px solid rgba(160,70,70,0.35);
+                color: #e48e8e;
+                padding: 4px 10px;
+                border-radius: 20px;
+                cursor: pointer;
+                font-size: 11px;
+                backdrop-filter: blur(6px);
+                transition: background 0.2s;
+                white-space: nowrap;
+            ">✕ Reset</button>
+        </div>
         <div style="margin-top:10px;">
             <button id="btn-mute" onclick="toggleMute()" style="
                 background: rgba(20,60,20,0.7);
@@ -137,17 +152,19 @@ const ctx = canvas.getContext('2d');
 const uploadInput = document.getElementById('upload');
 const cursorEl = document.getElementById('cursor-ripple');
 
-let width, height, koi;
+let width, height;
+let fishes  = [];   // semua ikan real (termasuk ikan utama index 0)
 let mouse = { x: 0, y: 0 };
 let time = 0;
 let silhouettes = [];
 let vegetation = [];
 let pebbles = [];
 let ripples = [];
-let pellets = [];       // pelet makanan
+let pellets = [];
 let algaePatches = [];
 let lastRippleTime = 0;
 let offscreenBg = null;
+let offscreenVignette = null;
 
 // ─── AUDIO SYSTEM ──────────────────────────────────────────────────────────────
 const musicAudio = new Audio('https://cdn.jsdelivr.net/gh/Agungandr/The-Zen-Canvas-Procedural-Koi@main/assets/audio/musicbg.mp3');
@@ -165,23 +182,32 @@ let isMuted      = false;
 
 function startAudioOnce() {
     if (audioStarted) return;
-    audioStarted = true;
+    
+    // Paksa resume jika menggunakan AudioContext (sering diminta browser mobile)
+    if (window.AudioContext || window.webkitAudioContext) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }
 
-    musicAudio.play()
-        .then(() => console.log('✅ Musik mulai'))
-        .catch(e => console.warn('❌ Musik gagal:', e));
+    // Playback musik
+    musicAudio.play().then(() => {
+        audioStarted = true;
+        console.log('✅ Musik jalan');
+        // Fade in volume
+        let fadeVol = 0;
+        const fadeIn = setInterval(() => {
+            fadeVol = Math.min(0.45, fadeVol + 0.01);
+            if (!isMuted) musicAudio.volume = fadeVol;
+            if (fadeVol >= 0.45) clearInterval(fadeIn);
+        }, 50);
+    }).catch(e => {
+        console.warn('❌ Musik diblokir browser:', e);
+    });
 
-    sfxAudio.play()
-        .then(() => console.log('✅ SFX mulai'))
-        .catch(e => console.warn('❌ SFX gagal:', e));
-
-    // Fade in musik dari 0 → 0.45
-    let fadeVol = 0;
-    const fadeIn = setInterval(() => {
-        fadeVol = Math.min(0.45, fadeVol + 0.008);
-        if (!isMuted) musicAudio.volume = fadeVol;
-        if (fadeVol >= 0.45) clearInterval(fadeIn);
-    }, 50);
+    // Playback SFX
+    sfxAudio.play().catch(e => console.warn('❌ SFX diblokir:', e));
 
     const btn = document.getElementById('btn-mute');
     if (btn) btn.textContent = '🔊 Suara: ON';
@@ -207,27 +233,40 @@ function updateAudioSpeed(normalizedSpeed) {
 }
 
 const SETTINGS = {
-    segments: 40,
+    segments: 24,        // dikurangi dari 40 → lebih ringan
     segmentLength: 6,
     headSmoothness: 0.05,
-    maxPellets: 15, // Tambahkan ini: maksimal 15 pelet di layar
+    maxPellets: 10,      // dikurangi dari 15
     defaultImg: 'https://raw.githubusercontent.com/Agungandr/The-Zen-Canvas-Procedural-Koi/main/koibg2.png'
 };
 
 const koiImage = new Image();
-let isImageLoaded = false;
-
 koiImage.crossOrigin = 'anonymous';
+koiImage.src = SETTINGS.defaultImg;
+
+// userImage = gambar yang diupload user (null = belum upload, pakai default)
+let userImage = null;
+
 uploadInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-        isImageLoaded = false;
-        koiImage.src = event.target.result;
+        const img = new Image();
+        img.onload = () => {
+            userImage = img;
+            document.getElementById('btn-reset').style.display = 'inline-block';
+        };
+        img.src = event.target.result;
     };
-    if(e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+    reader.readAsDataURL(file);
 });
-koiImage.onload = () => { isImageLoaded = true; };
-koiImage.src = SETTINGS.defaultImg;
+
+function resetToDefault() {
+    userImage = null;
+    uploadInput.value = '';
+    document.getElementById('btn-reset').style.display = 'none';
+}
 
 // ─── RIPPLE CLASS ──────────────────────────────────────────────────────────────
 class Ripple {
@@ -349,39 +388,42 @@ class Pellet {
     isReady() { return !this.sinking && !this.eaten; }
 }
 class KoiFish {
-    constructor(isSilhouette = false) {
+    // isLeader = true → ikan utama (follow mouse kuat)
+    // isLeader = false → ikan kawanan (flocking + feeding)
+    constructor(isSilhouette = false, isLeader = false) {
         this.isSilhouette = isSilhouette;
+        this.isLeader     = isLeader;
+        // Kawanan pakai segmen lebih sedikit → performa lebih ringan
+        this.n   = isSilhouette ? 20 : (isLeader ? SETTINGS.segments : 15);
+        this.len = isSilhouette ? 4  : SETTINGS.segmentLength;
+
+        this.waveTime    = Math.random() * 100;
+        this.scale       = isSilhouette ? (Math.random() * 0.4 + 0.2)
+                         : (isLeader    ? 1.3 : 0.75 + Math.random() * 0.3);
+        this.offsetY     = Math.random() * 500;
+        this.depth       = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
+        this.headAngle   = Math.random() * Math.PI * 2;
+        this.wanderAngle = this.headAngle;
+        this.speed       = isSilhouette ? 0 : (isLeader ? 2.5 : 1.8 + Math.random() * 0.6);
+        this.tintHue     = isLeader ? 0 : (Math.random() * 60 - 30);
+
+        // Inisialisasi points sementara (akan di-overwrite saat spawn)
+        const startX = Math.random() * (window.innerWidth  || 800);
+        const startY = Math.random() * (window.innerHeight || 600);
         this.points = [];
-        this.n = isSilhouette ? 25 : SETTINGS.segments;
-        this.len = isSilhouette ? 4 : SETTINGS.segmentLength;
-
-        const startX = Math.random() * window.innerWidth;
-        const startY = Math.random() * window.innerHeight;
-
         for (let i = 0; i <= this.n; i++) {
             this.points.push({ x: startX, y: startY });
         }
 
-        this.waveTime = Math.random() * 100;
-        this.scale = isSilhouette ? (Math.random() * 0.4 + 0.2) : 1.3;
-        this.offsetY = Math.random() * 500;
-        this.depth = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
-        this.headAngle = Math.random() * Math.PI * 2;
-        this.speed = isSilhouette ? 0 : 2.5;
-
-        // Spawn dari luar layar dalam formasi garis lurus
-        // agar slice tidak numpuk saat pertama muncul
+        // Spawn dari luar layar
         if (!isSilhouette) {
-            // Pilih sisi layar secara acak (kiri/kanan/atas/bawah)
             const side = Math.floor(Math.random() * 4);
             let spawnX, spawnY;
-            if (side === 0)      { spawnX = -80;          spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = 0; }
+            if      (side === 0) { spawnX = -80;           spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = 0; }
             else if (side === 1) { spawnX = (window.innerWidth || 800) + 80; spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = Math.PI; }
-            else if (side === 2) { spawnX = Math.random() * (window.innerWidth || 800);  spawnY = -80; this.headAngle = Math.PI / 2; }
-            else                 { spawnX = Math.random() * (window.innerWidth || 800);  spawnY = (window.innerHeight || 600) + 80; this.headAngle = -Math.PI / 2; }
+            else if (side === 2) { spawnX = Math.random() * (window.innerWidth || 800); spawnY = -80; this.headAngle = Math.PI / 2; }
+            else                 { spawnX = Math.random() * (window.innerWidth || 800); spawnY = (window.innerHeight || 600) + 80; this.headAngle = -Math.PI / 2; }
 
-            // Susun semua points dalam garis lurus searah headAngle
-            // sehingga ikan langsung punya bentuk memanjang yang benar
             this.points = [];
             for (let i = 0; i <= this.n; i++) {
                 this.points.push({
@@ -391,18 +433,81 @@ class KoiFish {
             }
         }
 
-        // ── Feeding mode ──────────────────────────────────────────────────────
+        // Feeding mode
         this.feedTarget  = null;
         this.feedMode    = false;
         this.eatCooldown = 0;
     }
 
-    // Cari pelet terdekat yang sudah mengapung (siap dimakan)
+    // Flocking — hanya hitung setiap 3 frame (hemat CPU)
+    _flockSteering() {
+        if (this._flockFrame === undefined) this._flockFrame = 0;
+        this._flockFrame++;
+        if (this._flockFrame % 3 !== 0) return this._lastFlockSteer || 0;
+
+        const head = this.points[0];
+        const RADIUS_SEP   = 80;
+        const RADIUS_FLOCK = 200;
+
+        let sepX = 0, sepY = 0, sepCount = 0;
+        let aliX = 0, aliY = 0, aliCount = 0;
+        let cohX = 0, cohY = 0, cohCount = 0;
+
+        for (const other of fishes) {
+            if (other === this) continue;
+            const ox = other.points[0].x, oy = other.points[0].y;
+            const d  = Math.hypot(ox - head.x, oy - head.y);
+            if (d < RADIUS_SEP && d > 0) {
+                sepX += (head.x - ox) / d;
+                sepY += (head.y - oy) / d;
+                sepCount++;
+            }
+            if (d < RADIUS_FLOCK) {
+                aliX += Math.cos(other.headAngle);
+                aliY += Math.sin(other.headAngle);
+                aliCount++;
+                cohX += ox; cohY += oy; cohCount++;
+            }
+        }
+
+        let steer = 0;
+        if (sepCount > 0) {
+            const a = Math.atan2(sepY / sepCount, sepX / sepCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.6;
+        }
+        if (aliCount > 0) {
+            const a = Math.atan2(aliY / aliCount, aliX / aliCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.15;
+        }
+        if (cohCount > 0) {
+            const a = Math.atan2(cohY / cohCount - head.y, cohX / cohCount - head.x);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.08;
+        }
+
+        this._lastFlockSteer = steer;
+        return steer;
+    }
+
+    // Cari pelet terdekat yang siap dimakan DAN belum dikejar ikan lain
     _findNearestPellet() {
         const head = this.points[0];
+        // Kumpulkan pelet yang sudah diklaim ikan lain
+        const claimed = new Set(
+            fishes.filter(f => f !== this && f.feedTarget).map(f => f.feedTarget)
+        );
         let best = null, bestDist = Infinity;
         for (const p of pellets) {
             if (!p.isReady()) continue;
+            if (claimed.has(p)) continue;  // sudah dikejar ikan lain
             const d = Math.hypot(p.x - head.x, p.y - head.y);
             if (d < bestDist) { bestDist = d; best = p; }
         }
@@ -417,71 +522,85 @@ class KoiFish {
             head.x = (width / 2) + Math.cos(time * 0.2 + this.offsetY) * (width * 0.4);
             head.y = (height / 2) + Math.sin(time * 0.3 + this.offsetY) * (height * 0.3);
         } else {
-            // ── Tentukan target gerak ──────────────────────────────────────────
             if (this.eatCooldown > 0) this.eatCooldown--;
 
-            // Cek apakah ada pelet siap dimakan
             const nearPellet = this._findNearestPellet();
+            let destAngle;
+
+            // --- LOGIKA PEMISAHAN TARGET ---
             if (nearPellet && this.eatCooldown === 0) {
-                this.feedMode   = true;
+                // Semua ikan (Utama & Kawanan) akan mengejar pelet jika ada
+                this.feedMode = true; 
                 this.feedTarget = nearPellet;
-            } else if (!nearPellet) {
-                this.feedMode   = false;
-                this.feedTarget = null;
-            }
-
-            // Pilih destination: pelet atau mouse
-            let destX, destY;
-            if (this.feedMode && this.feedTarget) {
-                destX = this.feedTarget.x;
-                destY = this.feedTarget.y;
+                const dx = this.feedTarget.x - head.x;
+                const dy = this.feedTarget.y - head.y;
+                destAngle = Math.atan2(dy, dx);
+            } else if (this.isLeader) {
+                // HANYA ikan utama yang mengikuti mouse
+                this.feedMode = false;
+                destAngle = Math.atan2(target.y - head.y, target.x - head.x);
             } else {
-                destX = target.x;
-                destY = target.y;
+                // Kawanan akan berenang bebas (Flocking) tanpa mempedulikan mouse
+                this.feedMode = false;
+                const flockSteer = this._flockSteering();
+                // Kawanan hanya menggunakan steering dari kelompoknya saja
+                destAngle = this.headAngle + flockSteer;
             }
 
-            // Kecepatan lebih cepat saat feeding
+            // Kecepatan
             const curSpeed = this.feedMode ? this.speed * 1.55 : this.speed;
 
-            const dx = destX - head.x;
-            const dy = destY - head.y;
-            const dist = Math.hypot(dx, dy);
-
-            // Makan jika cukup dekat
-            if (this.feedMode && this.feedTarget && dist < 22) {
-                this.feedTarget.eaten = true;
-                this.feedTarget       = null;
-                this.feedMode         = false;
-                this.eatCooldown      = 80;
-                ripples.push(new Ripple(head.x, head.y));
+            // Logika Makan
+            if (this.feedMode && this.feedTarget) {
+                const dist = Math.hypot(this.feedTarget.x - head.x, this.feedTarget.y - head.y);
+                if (dist < 22) {
+                    this.feedTarget.eaten = true;
+                    this.feedTarget = null;
+                    this.feedMode = false;
+                    this.eatCooldown = 80;
+                    ripples.push(new Ripple(head.x, head.y));
+                }
             }
 
-            // Makin dekat → makin agresif beloknya (hindari ikan muter terus)
-            const closeness = this.feedMode ? Math.max(0, 1 - dist / 80) : 0;
-            const MAX_TURN  = (this.feedMode ? 0.065 : 0.045) + closeness * 0.08;
-
-            const targetAngle = Math.atan2(dy, dx);
-            let diff = targetAngle - this.headAngle;
-            while (diff >  Math.PI) diff -= Math.PI * 2;
+            // Pergerakan Sudut
+            let diff = destAngle - this.headAngle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
-            this.headAngle += Math.max(-MAX_TURN, Math.min(MAX_TURN, diff));
+            
+            const turnSpeed = this.isLeader ? 0.045 : 0.035; // Leader sedikit lebih lincah
+            this.headAngle += Math.max(-turnSpeed, Math.min(turnSpeed, diff));
 
-            // Jangan melambat terlalu awal — hanya rem di jarak < 20px
-            const approachFactor = (this.feedMode && dist < 20) ? Math.max(0.6, dist / 20) : 1;
-            head.x += Math.cos(this.headAngle) * curSpeed * approachFactor;
-            head.y += Math.sin(this.headAngle) * curSpeed * approachFactor;
+            head.x += Math.cos(this.headAngle) * curSpeed;
+            head.y += Math.sin(this.headAngle) * curSpeed;
+
+            // Boundary Wrap (Muncul dari sisi lain layar)
+            const margin = 100;
+            if (head.x < -margin) head.x = width + margin;
+            if (head.x > width + margin) head.x = -margin;
+            if (head.y < -margin) head.y = height + margin;
+            if (head.y > height + margin) head.y = -margin;
         }
 
+        // FABRIK / Follower segments
         for (let i = 1; i < this.points.length; i++) {
             const p = this.points[i], prev = this.points[i - 1];
             let angle = Math.atan2(p.y - prev.y, p.x - prev.x);
-            // Ikan sedikit lebih aktif meliuk saat mode makan
-            const waveAmp = this.feedMode ? 0.13 : 0.1;
-            let wave = Math.sin(this.waveTime - i * 0.2) * (this.isSilhouette ? 0.05 : waveAmp);
-            angle += wave * (i / this.n);
+            const waveAmp = this.feedMode ? 0.11 : 0.085;
+            const frontDamp = Math.min(1, i / 8);
+            let wave = Math.sin(this.waveTime - i * 0.2) * (this.isSilhouette ? 0.05 : waveAmp) * (i / this.n) * frontDamp;
+            angle += wave;
             p.x = prev.x + Math.cos(angle) * this.len;
             p.y = prev.y + Math.sin(angle) * this.len;
         }
+
+        // Smoothing Pass — hanya untuk leader
+        if (!this.isSilhouette && this.isLeader) {
+            for (let i = 1; i < this.points.length - 1; i++) {
+                this.points[i].x = this.points[i].x * 0.85 + (this.points[i-1].x + this.points[i+1].x) * 0.075;
+                this.points[i].y = this.points[i].y * 0.85 + (this.points[i-1].y + this.points[i+1].y) * 0.075;
+            }
+        }
+
     }
 
     // ── Sirip punggung (dorsal fin) — satu-satunya yang di-generate ──────────
@@ -545,6 +664,125 @@ class KoiFish {
         }
     }
 
+    _buildBodyPath() {
+        const pts = this.points;
+        const n   = pts.length;
+        const S   = this.scale;
+
+        const maxW = 19 * S; // diperbesar dari 15
+        const bodyProfile = (t) => {
+            if (t < 0.06)  return maxW * 0.50 * (t / 0.06);
+            if (t < 0.15)  return maxW * (0.50 + (t - 0.06) / 0.09 * 0.32); // kepala lebih besar
+            if (t < 0.35)  return maxW * (0.82 + (t - 0.15) / 0.20 * 0.28); // badan lebih lebar
+            if (t < 0.65)  return maxW * (1.00 - (t - 0.35) / 0.30 * 0.38);
+            if (t < 0.88)  return maxW * (0.62 - (t - 0.65) / 0.23 * 0.44);
+            return maxW * 0.18 * (1 - (t - 0.88) / 0.12);
+        };
+
+        const left  = [];
+        const right = [];
+        const normals = [];
+
+        for (let i = 0; i < n; i++) {
+            const t    = i / (n - 1);
+            const p    = pts[i];
+            const prev = pts[Math.max(0, i - 1)];
+            const next = pts[Math.min(n - 1, i + 1)];
+            const tx = next.x - prev.x, ty = next.y - prev.y;
+            const tlen = Math.hypot(tx, ty) || 1;
+            const nx = -ty / tlen, ny = tx / tlen;
+            const w  = bodyProfile(t);
+            left.push ({ x: p.x + nx * w, y: p.y + ny * w });
+            right.push({ x: p.x - nx * w, y: p.y - ny * w });
+            normals.push({ nx, ny, tx: tx / tlen, ty: ty / tlen, t, p });
+        }
+
+        // ── Ekor lumba-lumba: lebar, pipih horizontal, notch dalam ────────
+        const tail     = pts[n - 1];
+        const tailPrev = pts[n - 2];
+        const tax = tail.x - tailPrev.x, tay = tail.y - tailPrev.y;
+        const talen = Math.hypot(tax, tay) || 1;
+        const tfx = tax / talen, tfy = tay / talen;
+        const tnx = -tay / talen, tny = tax / talen;
+
+        const tfLen  = maxW * 2.8;   // lebih panjang
+        const tfSprd = maxW * 1.8;   // jauh lebih lebar — seperti ekor lumba-lumba
+        const tfBase = maxW * 0.20;
+
+        const forkLBase = { x: tail.x + tnx * tfBase,  y: tail.y + tny * tfBase };
+        const forkRBase = { x: tail.x - tnx * tfBase,  y: tail.y - tny * tfBase };
+        // ujung garpu: maju + menyebar lebar ke samping
+        const forkLTip  = { x: tail.x + tfx * tfLen + tnx * tfSprd,  y: tail.y + tfy * tfLen + tny * tfSprd };
+        const forkRTip  = { x: tail.x + tfx * tfLen - tnx * tfSprd,  y: tail.y + tfy * tfLen - tny * tfSprd };
+        // notch: lebih dalam supaya terlihat bercabang jelas
+        const forkNotch = { x: tail.x + tfx * (tfLen * 0.30), y: tail.y + tfy * (tfLen * 0.30) };
+
+        // ── Bangun path utama ─────────────────────────────────────────────
+        ctx.beginPath();
+
+        const headPt   = pts[0];
+        const headPrev = pts[1];
+        const hax = headPt.x - headPrev.x, hay = headPt.y - headPrev.y;
+        const halen = Math.hypot(hax, hay) || 1;
+        const headTip = { x: headPt.x + (hax / halen) * maxW * 0.65, y: headPt.y + (hay / halen) * maxW * 0.65 };
+
+        ctx.moveTo(left[0].x, left[0].y);
+        ctx.quadraticCurveTo(headTip.x, headTip.y, right[0].x, right[0].y);
+
+        for (let i = 1; i < right.length; i++) {
+            const m = right[i - 1];
+            ctx.quadraticCurveTo(m.x, m.y, (m.x + right[i].x) / 2, (m.y + right[i].y) / 2);
+        }
+
+        // Ekor kanan → notch → kiri
+        ctx.lineTo(forkRBase.x, forkRBase.y);
+        ctx.quadraticCurveTo(
+            forkRBase.x + tfx * tfLen * 0.55, forkRBase.y + tfy * tfLen * 0.55,
+            forkRTip.x, forkRTip.y
+        );
+        ctx.quadraticCurveTo(forkNotch.x, forkNotch.y, forkLTip.x, forkLTip.y);
+        ctx.quadraticCurveTo(
+            forkLBase.x + tfx * tfLen * 0.55, forkLBase.y + tfy * tfLen * 0.55,
+            forkLBase.x, forkLBase.y
+        );
+
+        for (let i = left.length - 1; i >= 1; i--) {
+            const m = left[i];
+            ctx.quadraticCurveTo(m.x, m.y, (m.x + left[i - 1].x) / 2, (m.y + left[i - 1].y) / 2);
+        }
+        ctx.closePath();
+
+        // ── Sirip dada kiri & kanan — lebih lebar dan panjang ────────────
+        const pfi = Math.floor(n * 0.20);
+        if (pfi < normals.length) {
+            const pf   = normals[pfi];
+            const finW = maxW * 1.0 * S;  // lebih lebar dari sebelumnya (0.72)
+            const finL = maxW * 1.5 * S;  // lebih panjang
+
+            // Sirip kiri
+            const base1 = { x: pf.p.x + pf.nx * maxW * 0.85, y: pf.p.y + pf.ny * maxW * 0.85 };
+            const base2 = { x: pf.p.x + pf.nx * maxW * 0.35 + pf.tx * maxW * 0.7,
+                            y: pf.p.y + pf.ny * maxW * 0.35 + pf.ty * maxW * 0.7 };
+            const tip   = { x: pf.p.x + pf.nx * (maxW + finW) - pf.tx * finL * 0.35,
+                            y: pf.p.y + pf.ny * (maxW + finW) - pf.ty * finL * 0.35 };
+            ctx.moveTo(base1.x, base1.y);
+            ctx.quadraticCurveTo(tip.x, tip.y, base2.x, base2.y);
+            ctx.closePath();
+
+            // Sirip kanan (mirror)
+            const rb1  = { x: pf.p.x - pf.nx * maxW * 0.85, y: pf.p.y - pf.ny * maxW * 0.85 };
+            const rb2  = { x: pf.p.x - pf.nx * maxW * 0.35 + pf.tx * maxW * 0.7,
+                           y: pf.p.y - pf.ny * maxW * 0.35 + pf.ty * maxW * 0.7 };
+            const rtip = { x: pf.p.x - pf.nx * (maxW + finW) - pf.tx * finL * 0.35,
+                           y: pf.p.y - pf.ny * (maxW + finW) - pf.ty * finL * 0.35 };
+            ctx.moveTo(rb1.x, rb1.y);
+            ctx.quadraticCurveTo(rtip.x, rtip.y, rb2.x, rb2.y);
+            ctx.closePath();
+        }
+
+        return { left, right };
+    }
+
     draw() {
         if (this.isSilhouette) {
             const alpha = 0.12 + this.depth * 0.15;
@@ -562,13 +800,52 @@ class KoiFish {
             ctx.moveTo(this.points[0].x, this.points[0].y);
             for (let p of this.points) ctx.lineTo(p.x, p.y);
             ctx.stroke();
-        } else if (isImageLoaded) {
-            // 1. Dorsal fin (di bawah tubuh agar terlihat tumbuh dari punggung)
-            this._drawDorsalFin();
 
-            // 2. Tubuh utama (slice gambar)
+        } else if (userImage && userImage.complete) {
+            // ── USER UPLOAD: gambar di-clip ke body path ──────────────────
+            ctx.save();
+            ctx.globalAlpha = this.isLeader ? 0.92 : 0.75;
+
+            if (this.isLeader) this._drawDorsalFin();
+
+            this._buildBodyPath();
+            ctx.save();
+            ctx.clip();
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of this.points) {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            }
+            const pad = 16 * this.scale;
+            const bx = minX - pad, by = minY - pad;
+            const bw = (maxX - minX) + pad * 2;
+            const bh = (maxY - minY) + pad * 2;
+            ctx.drawImage(userImage, bx, by, bw, bh);
+
+            ctx.restore(); // lepas clip
+
+            ctx.beginPath();
+            this._buildBodyPath();
+            ctx.strokeStyle = `rgba(255,255,255,${this.isLeader ? 0.12 : 0.07})`;
+            ctx.lineWidth   = 0.8;
+            ctx.stroke();
+
+            ctx.restore();
+            ctx.globalAlpha = 1.0;
+
+        } else if (koiImage.complete && koiImage.naturalWidth > 0) {
+            // ── DEFAULT (koibg2.png): metode slice asli, tanpa masking ────
+            ctx.save();
+            ctx.globalAlpha = this.isLeader ? 0.9 : 0.7;
+
+            if (this.isLeader) this._drawDorsalFin();
+
             const imgW = koiImage.width, imgH = koiImage.height;
             const sliceW = imgW / (this.points.length - 1);
+
             for (let i = 0; i < this.points.length - 1; i++) {
                 const p = this.points[i], pNext = this.points[i + 1];
                 const angle = Math.atan2(pNext.y - p.y, pNext.x - p.x);
@@ -577,10 +854,13 @@ class KoiFish {
                 ctx.translate(p.x, p.y);
                 ctx.rotate(angle);
                 const dw = (dist + 1.5) * this.scale;
-                const dh = imgH * (this.len / sliceW) * this.scale;
+                const dh = imgH * (this.len / (imgW / this.n)) * this.scale;
                 ctx.drawImage(koiImage, i * sliceW, 0, sliceW, imgH, -0.5, -dh / 2, dw, dh);
                 ctx.restore();
             }
+
+            ctx.restore();
+            ctx.globalAlpha = 1.0;
         }
     }
 }
@@ -693,9 +973,9 @@ function buildStaticBackground() {
     octx.fillStyle = vign;
     octx.fillRect(0, 0, width, height);
 
-    // --- Bintik-bintik sedimen / partikel organik di dalam air ---
+    // --- Bintik-bintik sedimen (dikurangi dari 340 → 150) ---
     octx.globalAlpha = 1;
-    for (let i = 0; i < 340; i++) {
+    for (let i = 0; i < 150; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
         const pr = 0.4 + Math.random() * 1.4;
@@ -738,9 +1018,9 @@ function buildStaticBackground() {
 // ─── CAUSTICS (refraksi cahaya permukaan air) ─────────────────────────────────
 function drawCaustics() {
     ctx.globalCompositeOperation = 'screen';
-    // Beberapa blob cahaya yang bergerak pelan
-    for (let i = 0; i < 7; i++) {
-        const bx = (width * (i + 0.5) / 7) + Math.sin(time * 0.3 + i * 1.2) * 80;
+    // Dikurangi dari 7 → 4 blob
+    for (let i = 0; i < 4; i++) {
+        const bx = (width * (i + 0.5) / 4) + Math.sin(time * 0.3 + i * 1.2) * 80;
         const by = height * 0.25 + Math.cos(time * 0.25 + i * 0.9) * (height * 0.15);
         const r  = 120 + Math.sin(time + i) * 40;
         const causticGrad = ctx.createRadialGradient(bx, by, 0, bx, by, r);
@@ -753,9 +1033,9 @@ function drawCaustics() {
         ctx.fill();
     }
 
-    // Kilatan kecil caustics
-    for (let i = 0; i < 10; i++) {
-        const cx = (width * i / 9) + Math.sin(time * 0.6 + i * 2.3) * 120;
+    // Kilatan caustics — dikurangi dari 10 → 6
+    for (let i = 0; i < 6; i++) {
+        const cx = (width * i / 5) + Math.sin(time * 0.6 + i * 2.3) * 120;
         const cy = height * 0.1 + Math.cos(time * 0.5 + i * 1.7) * (height * 0.22);
         ctx.beginPath();
         ctx.arc(cx, cy, 18 + Math.sin(time + i) * 8, 0, Math.PI * 2);
@@ -767,9 +1047,9 @@ function drawCaustics() {
 
 // ─── WATER SURFACE SHIMMER ─────────────────────────────────────────────────────
 function drawSurfaceShimmer() {
-    // Garis-garis refleksi tipis di permukaan atas
     ctx.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 6; i++) {
+    // Dikurangi dari 6 → 3 garis
+    for (let i = 0; i < 3; i++) {
         const sy = height * 0.02 + i * height * 0.03 + Math.sin(time * 0.4 + i) * 10;
         const sx = Math.sin(time * 0.2 + i * 1.5) * width * 0.3;
         ctx.beginPath();
@@ -793,25 +1073,42 @@ function init() {
     mouse.x = width / 2;
     mouse.y = height / 2;
 
-    koi = new KoiFish(false);
-    silhouettes = Array.from({ length: 4 }, () => new KoiFish(true));
+    // Ikan: 1 leader + 2 kawanan (dikurangi dari 3)
+    fishes = [
+        new KoiFish(false, true),   // leader — follow mouse
+        new KoiFish(false, false),  // kawanan
+        new KoiFish(false, false),  // kawanan
+    ];
 
-    // Tanaman: kluster di tepi kiri, kanan, bawah
+    silhouettes = Array.from({ length: 1 }, () => new KoiFish(true, false)); // dikurangi dari 2
+
     vegetation = [];
-    for (let i = 0; i < 8;  i++) vegetation.push(new Plant(Math.random() * width * 0.18));
-    for (let i = 0; i < 8;  i++) vegetation.push(new Plant(width * 0.82 + Math.random() * width * 0.18));
-    for (let i = 0; i < 20; i++) vegetation.push(new Plant()); // tengah/acak
+    for (let i = 0; i < 5;  i++) vegetation.push(new Plant(Math.random() * width * 0.18));
+    for (let i = 0; i < 5;  i++) vegetation.push(new Plant(width * 0.82 + Math.random() * width * 0.18));
+    for (let i = 0; i < 12; i++) vegetation.push(new Plant()); // dikurangi dari 20
 
-    // Bebatuan & algae
-    pebbles = Array.from({ length: 90 }, () => new Pebble());
-    algaePatches = Array.from({ length: 18 }, () => new AlgaePatch());
+    pebbles      = Array.from({ length: 50 }, () => new Pebble()); // dikurangi dari 90
+    algaePatches = Array.from({ length: 10 }, () => new AlgaePatch()); // dikurangi dari 18
 
     offscreenBg = buildStaticBackground();
+
+    // Cache vignette overlay agar tidak dibuat ulang tiap frame
+    offscreenVignette = document.createElement('canvas');
+    offscreenVignette.width = width; offscreenVignette.height = height;
+    const vctx = offscreenVignette.getContext('2d');
+    const vign2 = vctx.createRadialGradient(width/2, height/2, height*0.25, width/2, height/2, width*0.8);
+    vign2.addColorStop(0, 'rgba(0,0,0,0)');
+    vign2.addColorStop(1, 'rgba(0, 5, 0, 0.45)');
+    vctx.fillStyle = vign2;
+    vctx.fillRect(0, 0, width, height);
+
     ripples = [];
 }
 
 // ─── ANIMATE ───────────────────────────────────────────────────────────────────
+let frameCount = 0;
 function animate() {
+    frameCount++;
     time += 0.018;
 
     // Gambar background statis (cached)
@@ -821,27 +1118,37 @@ function animate() {
     silhouettes.forEach(s => { s.update(); s.draw(); });
 
     // 2. Tanaman belakang (setengah pertama)
-    vegetation.slice(0, Math.floor(vegetation.length / 2)).forEach(p => p.draw());
+    const halfVeg = Math.floor(vegetation.length / 2);
+    for (let i = 0; i < halfVeg; i++) vegetation[i].draw();
 
-    // 3. Ikan utama + hitung kecepatan untuk audio
-    if (koi) {
-        koi.update(mouse);
-        koi.draw();
+    // 3a. Gambar semua ikan KAWANAN dulu (Lapisan Bawah)
+    let leaderFish = null;
+    for (const fish of fishes) {
+        if (!fish.isLeader) {
+            fish.update(mouse);
+            fish.draw();
+        } else {
+            leaderFish = fish;
+        }
+    }
 
-        // Hitung kecepatan kepala ikan (jarak per frame)
-        const head = koi.points[0];
-        if (!koi._prevHead) koi._prevHead = { x: head.x, y: head.y };
-        const fishSpeed = Math.hypot(head.x - koi._prevHead.x, head.y - koi._prevHead.y);
-        koi._prevHead = { x: head.x, y: head.y };
-        // Normalize: kecepatan normal ~2.5, feeding ~4 → range 0..1
-        const normalizedSpeed = Math.min(1, fishSpeed / 5);
-        updateAudioSpeed(normalizedSpeed);
+    // 3b. Gambar ikan UTAMA terakhir (Lapisan Atas)
+    if (leaderFish) {
+        leaderFish.update(mouse);
+        leaderFish.draw();
+
+        // Hitung kecepatan leader untuk audio (hanya sekali)
+        const head = leaderFish.points[0];
+        if (!leaderFish._prevHead) leaderFish._prevHead = { x: head.x, y: head.y };
+        const fishSpeed = Math.hypot(head.x - leaderFish._prevHead.x, head.y - leaderFish._prevHead.y);
+        leaderFish._prevHead = { x: head.x, y: head.y };
+        updateAudioSpeed(Math.min(1, fishSpeed / 5));
     }
 
     // 4. Tanaman depan
-    vegetation.slice(Math.floor(vegetation.length / 2)).forEach(p => p.draw());
+    for (let i = halfVeg; i < vegetation.length; i++) vegetation[i].draw();
 
-    // 5. Pelet makanan (di atas tanaman, di bawah ripple)
+    // 5. Pelet makanan
     pellets = pellets.filter(p => !p.isDead());
     pellets.forEach(p => { p.update(); p.draw(); });
 
@@ -853,18 +1160,14 @@ function animate() {
     ripples = ripples.filter(r => !r.isDead());
     ripples.forEach(r => { r.update(); r.draw(); });
 
-    // 6. Cahaya caustics
-    drawCaustics();
+    // 7. Caustics — hanya setiap 2 frame
+    if (frameCount % 2 === 0) drawCaustics();
 
-    // 7. Kilau permukaan
-    drawSurfaceShimmer();
+    // 8. Surface shimmer — hanya setiap 3 frame
+    if (frameCount % 3 === 0) drawSurfaceShimmer();
 
-    // 8. Vignette overlay tipis (tepi gelap)
-    const vign2 = ctx.createRadialGradient(width/2, height/2, height*0.25, width/2, height/2, width*0.8);
-    vign2.addColorStop(0,   'rgba(0,0,0,0)');
-    vign2.addColorStop(1,   'rgba(0, 5, 0, 0.45)');
-    ctx.fillStyle = vign2;
-    ctx.fillRect(0, 0, width, height);
+    // 9. Vignette overlay (cached)
+    ctx.drawImage(offscreenVignette, 0, 0);
 
     requestAnimationFrame(animate);
 }
@@ -932,6 +1235,10 @@ canvas.addEventListener('touchstart', e => {
 
 canvas.addEventListener('touchmove',  handleTouch, { passive: false });
 canvas.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
+// Gabungkan semua pemicu suara dalam satu event yang diakui browser mobile
+['click', 'touchstart', 'touchend'].forEach(evt => {
+    window.addEventListener(evt, startAudioOnce, { once: true });
+});
 
 init();
 animate();
