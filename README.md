@@ -1,24 +1,41 @@
-Deskripsi Proyek
-Tipe Proyek: Experimental Web-Based Procedural Animation.
+🐟 Zen Canvas: Procedural Koi Pond (v2.3.0)
+Zen Canvas adalah simulasi kolam koi interaktif berbasis HTML5 Canvas yang menggabungkan algoritma pergerakan prosedural dengan estetika visual yang menenangkan. Proyek ini dirancang untuk memberikan pengalaman meditatif (ambient simulation) langsung di dalam peramban web.
 
-Deskripsi Singkat:
-Sebuah eksperimen interaktif berbasis HTML5 Canvas yang mensimulasikan ekosistem kolam ikan koi secara organik. Proyek ini mengeksplorasi penggunaan algoritma FABRIK (Forward And Backward Reaching Inverse Kinematics) untuk menghasilkan pergerakan makhluk hidup yang fleksibel dan adaptif terhadap input pengguna secara real-time.
+🌟 Fitur Unggulan (v2.3.0)
+Procedural Animation: Pergerakan ikan koi dihasilkan secara dinamis menggunakan sistem FABRIK (Forward And Backward Reaching Inverse Kinematics) sederhana untuk pergerakan tubuh yang luwes dan alami.
 
-Fitur Utama:
+Interactive Feeding System: Klik atau sentuh layar untuk menjatuhkan pelet makanan. Ikan memiliki logika pencarian jalur (pathfinding) untuk mengejar dan memakan pelet tersebut.
 
-Dynamic Bone-Chain: Sistem tulang belakang ikan yang terdiri dari 40+ segmen untuk liku tubuh yang sangat halus.
+Dynamic Audio Engine: Musik latar Zen dan efek suara air yang volumenya beradaptasi dengan kecepatan renang ikan (berbasis Physics-to-Audio mapping).
 
-Image-to-Animation Mapping: Kemampuan pengguna untuk mengunggah aset visual statis (.png) yang kemudian diproses secara prosedural menjadi entitas yang bergerak secara volumetrik.
+New Gear Settings Menu: Panel kontrol UI yang memungkinkan kustomisasi langsung:
 
-Multi-Layer Depth: Simulasi kedalaman air menggunakan teknik layering antara siluet latar belakang, vegetasi air prosedural, dan efek caustics cahaya matahari.
+Pengaturan jumlah kawanan ikan (flocking) dan siluet kedalaman.
 
-Fluid Motion Physics: Implementasi efek inersia dan hambatan air (drag) pada kepala ikan untuk menciptakan kesan bobot dan massa saat berenang.
+Fitur Custom Skin (Unggah gambar sendiri untuk dijadikan pola sisik ikan).
 
-Mengapa ini disebut "Experimental"?
-Proyek ini masuk kategori Experimental karena beberapa alasan teknis yang unik:
+Kontrol audio terintegrasi.
 
-Manipulasi Raster di Canvas: Mengambil gambar diam dan "memaksanya" mengikuti jalur matematika tanpa menggunakan library pihak ketiga (seperti GreenSock atau Three.js).
+Optimized Performance: Menggunakan teknik Offscreen Canvas Caching untuk latar belakang dan tanaman, memastikan simulasi berjalan lancar bahkan pada perangkat dengan spesifikasi rendah.
 
-No-Library Dependence: Semua logika fisika, matematika sudut (trigonometri), dan rendering dikerjakan secara vanilla JavaScript.
+Smart Behavior: Ikan akan mengikuti kursor saat aktif, namun akan beralih ke mode Wandering (berenang bebas) secara otomatis saat kursor meninggalkan area layar.
 
-Procedural Content Generation: Siluet ikan dan tanaman air tidak menggunakan gambar aset, melainkan "dilukis" oleh kode saat itu juga, sehingga setiap kali dijalankan, bentuk vegetasi akan selalu berbeda.
+🛠️ Detail Teknis
+Engine: Vanilla JavaScript (No Frameworks).
+
+Rendering: HTML5 Canvas API (2D Context).
+
+Optimization: * Layered Rendering untuk menciptakan efek kedalaman (Parallax).
+
+Frame-skipping pada kalkulasi caustics dan shimmer untuk efisiensi CPU.
+
+Compatibility: Responsif di desktop dan perangkat seluler (Touch Support).
+
+🚀 Cara Penggunaan
+Cukup buka file index.html di browser pilihan Anda.
+
+Gerakkan Kursor: Menarik perhatian ikan utama.
+
+Klik/Tap: Memberi makan ikan.
+
+Ikon Gear (Pojok Kanan Atas): Membuka pengaturan simulasi.
