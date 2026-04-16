@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kolam Koi - Natural Pond Edition (Lite)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            background: #0d1f0f;
+            font-family: 'Segoe UI', sans-serif;
+            cursor: none;
+        }
+        canvas { display: block; }
+
+        /* Custom cursor ripple */
+        #cursor-ripple {
+            position: fixed;
+            pointer-events: none;
+            z-index: 999;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(180,230,180,0.5);
+            transform: translate(-50%, -50%);
+            transition: transform 0.08s ease;
+        }
+
+        /* ── Gear Menu ─────────────────────────────────────── */
+        #gear-wrap {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        #gear-btn {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: rgba(5, 18, 8, 0.75);
+            border: 1px solid rgba(80, 160, 80, 0.3);
+            backdrop-filter: blur(10px);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s, border-color 0.2s, transform 0.35s ease;
+            color: #8ed48e;
+        }
+        #gear-btn:hover { background: rgba(15,45,15,0.9); border-color: rgba(100,200,80,0.5); }
+        #gear-btn.open { transform: rotate(60deg); }
+
+        #gear-panel {
+            display: none;
+            flex-direction: column;
+            gap: 0;
+            background: rgba(5, 18, 8, 0.82);
+            border: 1px solid rgba(80, 160, 80, 0.25);
+            border-radius: 12px;
+            backdrop-filter: blur(14px);
+            padding: 14px 16px;
+            min-width: 220px;
+            color: #d4ead4;
+            font-size: 12px;
+        }
+        #gear-panel.open { display: flex; }
+
+        .g-section {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(80,160,80,0.12);
+        }
+        .g-section:last-child { border-bottom: none; padding-bottom: 0; }
+        .g-section:first-child { padding-top: 0; }
+
+        .g-label {
+            font-size: 10px;
+            letter-spacing: 0.07em;
+            color: rgba(140,210,140,0.6);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        /* slider */
+        .g-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .g-row span { min-width: 14px; text-align: right; color: #8ed48e; font-weight: 600; }
+        input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(80,160,70,0.3);
+            outline: none;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 13px; height: 13px;
+            border-radius: 50%;
+            background: #8ed48e;
+            cursor: pointer;
+        }
+
+        /* file upload */
+        input[type="file"] {
+            color: #8ed48e;
+            cursor: pointer;
+            font-size: 11px;
+            width: 100%;
+        }
+
+        /* buttons */
+        .g-btn {
+            background: rgba(20,60,20,0.7);
+            border: 1px solid rgba(80,160,70,0.3);
+            color: #8ed48e;
+            padding: 5px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 11px;
+            backdrop-filter: blur(6px);
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .g-btn.danger {
+            background: rgba(60,20,20,0.7);
+            border-color: rgba(160,70,70,0.35);
+            color: #e48e8e;
+        }
+        .g-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+        /* watermark di dalam panel */
+        .g-watermark {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+        }
+        .g-wm-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(180,230,170,0.75);
+            letter-spacing: 0.06em;
+        }
+        .g-wm-links { display: flex; gap: 6px; }
+        .g-wm-links a {
+            display: flex; align-items: center; gap: 4px;
+            color: rgba(160,220,155,0.6);
+            text-decoration: none;
+            font-size: 10px; font-weight: 500;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: rgba(10,30,12,0.55);
+            border: 1px solid rgba(80,160,70,0.2);
+            transition: color 0.2s, background 0.2s;
+        }
+        .g-wm-links a:hover {
+            color: rgba(200,255,190,0.95);
+            background: rgba(20,60,20,0.75);
+        }
+
+        /* hint pojok kiri bawah */
+        #hint-bar {
+            position: fixed;
+            bottom: 16px; left: 18px;
+            font-size: 11px;
+            color: rgba(140,210,140,0.55);
+            pointer-events: none;
+            z-index: 100;
+            letter-spacing: 0.04em;
+        }
+
+        /* Indikator waktu pojok kiri atas */
+        #time-indicator {
+            position: fixed;
+            top: 18px; left: 18px;
+            z-index: 100;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            opacity: 0.72;
+            transition: opacity 0.4s;
+        }
+        #time-indicator:hover { opacity: 1; }
+        #time-sun {
+            width: 28px; height: 28px;
+            position: relative;
+        }
+        #time-sun canvas {
+            width: 28px; height: 28px;
+        }
+        #time-label {
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            color: rgba(210, 240, 200, 0.8);
+            font-family: 'Segoe UI', sans-serif;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+        }
+    </style>
+</head>
+<body>
+    <div id="cursor-ripple"></div>
+    <div id="hint-bar">🐟 Gerakkan kursor · Klik untuk beri makan & aktifkan suara</div>
+
+    <!-- Indikator siklus waktu -->
+    <div id="time-indicator">
+        <div id="time-sun"><canvas id="sun-canvas" width="28" height="28"></canvas></div>
+        <span id="time-label">Siang</span>
+    </div>
+
+    <!-- Gear Menu -->
+    <div id="gear-wrap">
+        <button id="gear-btn" onclick="toggleGear()" title="Pengaturan">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+        </button>
+
+        <div id="gear-panel">
+
+            <!-- Jumlah Ikan -->
+            <div class="g-section">
+                <div class="g-label">Jumlah Ikan</div>
+                <div class="g-row">
+                    <label style="color:#a0d0a0;min-width:58px">Kawanan</label>
+                    <input type="range" id="sl-kawanan" min="0" max="6" value="2" step="1" oninput="updateSlider('kawanan',this.value)">
+                    <span id="val-kawanan">2</span>
+                </div>
+                <div class="g-row">
+                    <label style="color:#a0d0a0;min-width:58px">Siluet</label>
+                    <input type="range" id="sl-siluet" min="0" max="2" value="1" step="1" oninput="updateSlider('siluet',this.value)">
+                    <span id="val-siluet">1</span>
+                </div>
+                <div style="margin-top:6px;">
+                    <button class="g-btn" onclick="applyFishCount()">✔ Terapkan</button>
+                </div>
+            </div>
+
+            <!-- Gambar Ikan -->
+            <div class="g-section">
+                <div class="g-label">Gambar Ikan</div>
+                <input type="file" id="upload" accept="image/*">
+                <div style="margin-top:6px;" id="reset-wrap" style="display:none">
+                    <button id="btn-reset" class="g-btn danger" onclick="resetToDefault()" style="display:none">✕ Kembali ke Default</button>
+                </div>
+            </div>
+
+            <!-- Audio -->
+            <div class="g-section">
+                <div class="g-label">Musik</div>
+
+                <!-- Pilihan track -->
+                <div style="display:flex; gap:5px; margin-bottom:7px;">
+                    <button id="btn-track1" class="g-btn" style="flex:1; opacity:1;"
+                        onclick="selectTrack(1)">🎵 Track 1</button>
+                    <button id="btn-track2" class="g-btn" style="flex:1; opacity:0.45;"
+                        onclick="selectTrack(2)">🎵 Track 2</button>
+                </div>
+
+                <!-- Mute musik -->
+                <div class="g-btn-row" style="margin-bottom:6px;">
+                    <button id="btn-mute-music" class="g-btn" onclick="toggleMuteMusic()">⏳ Memuat...</button>
+                </div>
+
+                <!-- Volume musik -->
+                <div class="g-row">
+                    <label style="color:#a0d0a0;min-width:44px;font-size:11px;">Volume</label>
+                    <input type="range" id="sl-music-vol" min="0" max="100" value="45" step="1"
+                        oninput="setMusicVolume(this.value)">
+                    <span id="val-music-vol">45</span>
+                </div>
+            </div>
+
+            <div class="g-section">
+                <div class="g-label">Suara Ikan</div>
+
+                <!-- Mute SFX -->
+                <div class="g-btn-row" style="margin-bottom:6px;">
+                    <button id="btn-mute-sfx" class="g-btn" onclick="toggleMuteSfx()">🔊 SFX: ON</button>
+                </div>
+
+                <!-- Volume max SFX -->
+                <div class="g-row">
+                    <label style="color:#a0d0a0;min-width:44px;font-size:11px;">Volume</label>
+                    <input type="range" id="sl-sfx-vol" min="0" max="100" value="70" step="1"
+                        oninput="setSfxVolume(this.value)">
+                    <span id="val-sfx-vol">70</span>
+                </div>
+            </div>
+
+            <!-- Cuaca -->
+            <div class="g-section">
+                <div class="g-label">Cuaca</div>
+                <div class="g-btn-row">
+                    <button id="btn-rain" class="g-btn" onclick="toggleRain()">🌧 Hujan: OFF</button>
+                </div>
+                <div class="g-row" id="rain-intensity-row" style="display:none; margin-top:6px;">
+                    <label style="color:#a0d0a0;min-width:58px">Intesitas</label>
+                    <input type="range" id="sl-rain" min="1" max="3" value="1" step="1" oninput="updateRainIntensity(this.value)">
+                    <span id="val-rain">Gerimis</span>
+                </div>
+            </div>
+
+            <!-- Waktu -->
+            <div class="g-section">
+                <div class="g-label">Siklus Waktu</div>
+                <div class="g-btn-row" style="margin-bottom:6px;">
+                    <button id="btn-daycycle" class="g-btn" onclick="toggleDayCycle()">⏩ Auto: ON</button>
+                </div>
+                <div class="g-row">
+                    <label style="color:#a0d0a0;min-width:58px">Waktu</label>
+                    <input type="range" id="sl-daytime" min="0" max="100" value="35" step="1" oninput="setManualDay(this.value)">
+                    <span id="val-daytime">Siang</span>
+                </div>
+                <div class="g-row" style="margin-top:2px;">
+                    <label style="color:#a0d0a0;min-width:58px">Kecepatan</label>
+                    <input type="range" id="sl-dayspeed" min="1" max="5" value="2" step="1" oninput="updateDaySpeed(this.value)">
+                    <span id="val-dayspeed">2×</span>
+                </div>
+            </div>
+
+            <!-- Watermark -->
+            <div class="g-section">
+                <div class="g-watermark">
+                    <span class="g-wm-name">🐟 Zen Canvas Procedural Koi v2.5.1</span>
+                    <div class="g-wm-links">
+                        <a href="https://www.instagram.com/agunggandr" target="_blank">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+                            @agunggandr
+                        </a>
+                        <a href="https://github.com/Agungandr" target="_blank">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                            Agungandr
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <canvas id="koiCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('koiCanvas');
+const ctx = canvas.getContext('2d');
+const uploadInput = document.getElementById('upload');
+const cursorEl = document.getElementById('cursor-ripple');
+
+let width, height;
+let fishes  = [];   // semua ikan real (termasuk ikan utama index 0)
+let mouse = { x: 0, y: 0 };
+let time = 0;
+let silhouettes = [];
+let vegetation = [];
+let pebbles = [];
+let ripples = [];
+let pellets = [];
+let algaePatches = [];
+let lastRippleTime = 0;
+let offscreenBg = null;
+let offscreenVignette = null;
+
+// ─── RAIN SYSTEM ───────────────────────────────────────────────────────────────
+let rainEnabled    = false;
+let rainDrops      = [];
+let rainRipples    = [];
+let rainIntensity  = 1;   // 1=gerimis, 2=sedang, 3=lebat
+
+// ─── DAY-NIGHT CYCLE SYSTEM ────────────────────────────────────────────────────
+// dayTime: 0.0 = tengah malam, 0.25 = subuh, 0.35 = pagi, 0.5 = siang,
+//          0.65 = sore, 0.75 = senja, 0.85 = malam awal, 1.0 = tengah malam lagi
+let dayTime      = 0.35;   // mulai di pagi hari
+let dayAutoPlay  = true;
+let daySpeed     = 2;      // multiplier kecepatan (1–5)
+// Kecepatan base: 1 siklus = ~4 menit di speed 1 (time bertambah 0.018/frame ≈ 60fps)
+// time naik ~1.08/detik, 1 siklus = time +240 → dayTime naik 1/240 per satuan time
+const DAY_BASE_RATE = 1 / 3600; // satuan dayTime per satuan time (speed 1 = ~3.3 menit/siklus)
+
+// Bintang — dibuat sekali, dipakai saat malam
+let stars = [];
+
+// Canvas sun indicator (kecil, di kiri atas)
+const sunCanvas = document.getElementById('sun-canvas');
+const sunCtx    = sunCanvas ? sunCanvas.getContext('2d') : null;
+
+// ─── AUDIO SYSTEM ──────────────────────────────────────────────────────────────
+const MUSIC_TRACKS = [
+    'https://cdn.jsdelivr.net/gh/Agungandr/The-Zen-Canvas-Procedural-Koi@main/assets/audio/musicbg.mp3',
+    'https://cdn.jsdelivr.net/gh/Agungandr/The-Zen-Canvas-Procedural-Koi@main/assets/audio/musicbg2.mp3', // placeholder — akan diganti
+];
+
+let currentTrack   = 1;       // track aktif (1 atau 2)
+let musicVolume    = 0.45;    // 0.0–1.0
+let sfxMaxVolume   = 0.70;    // batas atas volume SFX
+let isMuteMusic    = false;
+let isMuteSfx      = false;
+let audioStarted   = false;
+
+// Buat objek Audio untuk musik
+const musicAudio = new Audio(MUSIC_TRACKS[0]);
+musicAudio.loop        = true;
+musicAudio.volume      = 0;
+musicAudio.crossOrigin = 'anonymous';
+
+const sfxAudio = new Audio('https://cdn.jsdelivr.net/gh/Agungandr/The-Zen-Canvas-Procedural-Koi@main/assets/audio/fish_swim.mp3');
+sfxAudio.loop        = true;
+sfxAudio.volume      = 0;
+sfxAudio.crossOrigin = 'anonymous';
+
+// ── Kontrol musik ──────────────────────────────────────────────────────────────
+function selectTrack(n) {
+    if (n === currentTrack) return;
+    currentTrack = n;
+
+    // Update tampilan tombol
+    document.getElementById('btn-track1').style.opacity = n === 1 ? '1' : '0.45';
+    document.getElementById('btn-track2').style.opacity = n === 2 ? '1' : '0.45';
+
+    // Fade out → ganti src → fade in
+    const prevVol = musicAudio.volume;
+    let fadeOut = setInterval(() => {
+        musicAudio.volume = Math.max(0, musicAudio.volume - 0.04);
+        if (musicAudio.volume <= 0) {
+            clearInterval(fadeOut);
+            musicAudio.pause();
+            musicAudio.src = MUSIC_TRACKS[n - 1];
+            musicAudio.load();
+            if (audioStarted && !isMuteMusic) {
+                musicAudio.play().then(() => {
+                    let fadeIn = setInterval(() => {
+                        musicAudio.volume = Math.min(musicVolume, musicAudio.volume + 0.03);
+                        if (musicAudio.volume >= musicVolume) clearInterval(fadeIn);
+                    }, 40);
+                }).catch(e => console.warn('Track switch gagal:', e));
+            }
+        }
+    }, 30);
+}
+
+function toggleMuteMusic() {
+    isMuteMusic = !isMuteMusic;
+    musicAudio.volume = isMuteMusic ? 0 : musicVolume;
+    document.getElementById('btn-mute-music').textContent = isMuteMusic ? '🔇 Musik: OFF' : '🔊 Musik: ON';
+}
+
+function toggleMuteSfx() {
+    isMuteSfx = !isMuteSfx;
+    sfxAudio.volume = isMuteSfx ? 0 : 0;  // sfx volume diatur dinamis via updateAudioSpeed
+    document.getElementById('btn-mute-sfx').textContent = isMuteSfx ? '🔇 SFX: OFF' : '🔊 SFX: ON';
+}
+
+function setMusicVolume(val) {
+    musicVolume = parseInt(val) / 100;
+    document.getElementById('val-music-vol').textContent = val;
+    if (!isMuteMusic && audioStarted) musicAudio.volume = musicVolume;
+}
+
+function setSfxVolume(val) {
+    sfxMaxVolume = parseInt(val) / 100;
+    document.getElementById('val-sfx-vol').textContent = val;
+}
+
+// ── Start audio (harus dari interaksi user) ────────────────────────────────────
+function startAudioOnce() {
+    if (audioStarted) return;
+
+    if (window.AudioContext || window.webkitAudioContext) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    musicAudio.play().then(() => {
+        audioStarted = true;
+        // Fade in musik
+        let fadeVol = 0;
+        const fadeIn = setInterval(() => {
+            fadeVol = Math.min(musicVolume, fadeVol + 0.01);
+            if (!isMuteMusic) musicAudio.volume = fadeVol;
+            if (fadeVol >= musicVolume) clearInterval(fadeIn);
+        }, 50);
+        // Update label tombol musik
+        document.getElementById('btn-mute-music').textContent = '🔊 Musik: ON';
+    }).catch(e => console.warn('❌ Musik diblokir browser:', e));
+
+    sfxAudio.play().catch(e => console.warn('❌ SFX diblokir:', e));
+}
+
+// ── Dipanggil tiap frame — atur volume SFX sesuai kecepatan ikan ──────────────
+function updateAudioSpeed(normalizedSpeed) {
+    if (!audioStarted) return;
+
+    // SFX — skala dengan sfxMaxVolume dan isMuteSfx
+    if (!isMuteSfx) {
+        const targetSfx = normalizedSpeed * sfxMaxVolume;
+        sfxAudio._targetVol = targetSfx;
+        sfxAudio.volume = sfxAudio.volume + (targetSfx - sfxAudio.volume) * 0.08;
+    } else {
+        sfxAudio.volume = Math.max(0, sfxAudio.volume - 0.05);
+    }
+
+    // Musik — ducking saat ikan aktif bergerak, hormati isMuteMusic & musicVolume
+    if (!isMuteMusic) {
+        const targetMusic = musicVolume - normalizedSpeed * (musicVolume * 0.30);
+        musicAudio.volume = musicAudio.volume + (targetMusic - musicAudio.volume) * 0.04;
+    }
+}
+
+const SETTINGS = {
+    segments: 24,        // dikurangi dari 40 → lebih ringan
+    segmentLength: 6,
+    headSmoothness: 0.05,
+    maxPellets: 10,      // dikurangi dari 15
+    defaultImg: 'https://raw.githubusercontent.com/Agungandr/The-Zen-Canvas-Procedural-Koi/main/koibg2.png'
+};
+
+const koiImage = new Image();
+koiImage.crossOrigin = 'anonymous';
+koiImage.src = SETTINGS.defaultImg;
+
+// userImage = gambar yang diupload user (null = belum upload, pakai default)
+let userImage = null;
+
+uploadInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            userImage = img;
+            document.getElementById('btn-reset').style.display = 'inline-block';
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+});
+
+function resetToDefault() {
+    userImage = null;
+    uploadInput.value = '';
+    document.getElementById('btn-reset').style.display = 'none';
+}
+
+// ─── GEAR MENU ─────────────────────────────────────────────────────────────────
+function toggleGear() {
+    const btn   = document.getElementById('gear-btn');
+    const panel = document.getElementById('gear-panel');
+    btn.classList.toggle('open');
+    panel.classList.toggle('open');
+}
+
+// Tutup panel kalau klik di luar
+document.addEventListener('click', e => {
+    const wrap = document.getElementById('gear-wrap');
+    if (!wrap.contains(e.target)) {
+        document.getElementById('gear-btn').classList.remove('open');
+        document.getElementById('gear-panel').classList.remove('open');
+    }
+});
+
+function updateSlider(name, val) {
+    document.getElementById('val-' + name).textContent = val;
+}
+
+// Terapkan jumlah ikan tanpa full init (background & tanaman tetap)
+function applyFishCount() {
+    const kawanan = parseInt(document.getElementById('sl-kawanan').value);
+    const siluet  = parseInt(document.getElementById('sl-siluet').value);
+
+    fishes = [new KoiFish(false, true)]; // leader selalu ada
+    for (let i = 0; i < kawanan; i++) fishes.push(new KoiFish(false, false));
+    silhouettes = Array.from({ length: siluet }, () => new KoiFish(true, false));
+
+    // Tutup panel setelah apply
+    document.getElementById('gear-btn').classList.remove('open');
+    document.getElementById('gear-panel').classList.remove('open');
+}
+
+// ─── RIPPLE CLASS ──────────────────────────────────────────────────────────────
+class Ripple {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.r = 2;
+        this.maxR = 60 + Math.random() * 40;
+        this.alpha = 0.5;
+        this.speed = 0.8 + Math.random() * 0.4;
+    }
+    update() {
+        this.r += this.speed;
+        this.alpha = 0.5 * (1 - this.r / this.maxR);
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y, this.r, this.r * 0.38, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(200, 240, 200, ${this.alpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // inner ring
+        if (this.r > 10) {
+            ctx.beginPath();
+            ctx.ellipse(this.x, this.y, this.r * 0.6, this.r * 0.6 * 0.38, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(200, 240, 200, ${this.alpha * 0.5})`;
+            ctx.stroke();
+        }
+    }
+    isDead() { return this.r >= this.maxR; }
+}
+
+// ─── PELLET CLASS ──────────────────────────────────────────────────────────────
+class Pellet {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.r = 4.5;
+        this.vy = 0;            // kecepatan jatuh (simulasi jatuh ke air)
+        this.sinking = true;    // fase jatuh dari atas
+        this.bobOffset = Math.random() * Math.PI * 2;
+        this.eaten = false;
+        this.alpha = 0;         // fade-in saat pertama muncul
+        this.eatAnim = 0;       // 0..1 saat dimakan (shrink)
+        this.life = 1000;
+        // warna pelet: coklat kemerahan seperti pelet ikan asli
+        this.hue = 22 + Math.random() * 14;
+    }
+
+    update() {
+        if (this.eaten) {
+            this.eatAnim += 0.12;
+            return;
+        }
+        // Kurangi nyawa pelet setiap frame
+        this.life--;
+        // Fade in
+        if (this.alpha < 1) this.alpha = Math.min(1, this.alpha + 0.08);
+
+        if (this.sinking) {
+            // Jatuh & melambat seperti masuk air
+            this.vy += 0.18;
+            this.vy *= 0.82;
+            this.y  += this.vy;
+            if (this.vy < 0.4) this.sinking = false;
+        } else {
+            // Mengapung — goyang kecil di permukaan
+            this.y += Math.sin(time * 1.8 + this.bobOffset) * 0.25;
+        }
+    }
+
+    draw() {
+        if (this.eatAnim >= 1) return;
+        const scale = this.eaten ? (1 - this.eatAnim) : 1;
+        const a     = this.alpha * (this.eaten ? (1 - this.eatAnim) : 1);
+
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.translate(this.x, this.y);
+        ctx.scale(scale, scale);
+
+        // Bayangan kecil di bawah pelet
+        ctx.beginPath();
+        ctx.ellipse(1, 3, this.r * 0.9, this.r * 0.35, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fill();
+
+        // Badan pelet (bulat sedikit lonjong)
+        const grad = ctx.createRadialGradient(-1, -1.5, 0.5, 0, 0, this.r);
+        grad.addColorStop(0,   `hsla(${this.hue + 15}, 70%, 70%, 1)`);
+        grad.addColorStop(0.5, `hsla(${this.hue}, 65%, 45%, 1)`);
+        grad.addColorStop(1,   `hsla(${this.hue - 5}, 60%, 28%, 1)`);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.r, this.r * 0.85, -0.3, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Kilap kecil
+        ctx.beginPath();
+        ctx.ellipse(-1.2, -1.5, this.r * 0.28, this.r * 0.18, -0.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fill();
+
+        // Ripple mengapung tipis
+        if (!this.sinking && !this.eaten) {
+            const rr = this.r + 3 + Math.sin(time * 2 + this.bobOffset) * 1.5;
+            ctx.beginPath();
+            ctx.ellipse(0, 1, rr, rr * 0.35, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(180,230,180,0.18)';
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    isDead() { 
+        return (this.eaten && this.eatAnim >= 1) || this.life <= 0; 
+    }
+    isReady() { return !this.sinking && !this.eaten; }
+}
+// ─── RAIN CONTROLS ─────────────────────────────────────────────────────────────
+function toggleRain() {
+    rainEnabled = !rainEnabled;
+    document.getElementById('btn-rain').textContent = rainEnabled ? '🌧 Hujan: ON' : '🌧 Hujan: OFF';
+    document.getElementById('rain-intensity-row').style.display = rainEnabled ? 'flex' : 'none';
+    if (!rainEnabled) { rainDrops = []; rainRipples = []; }
+}
+
+const RAIN_LABELS = ['', 'Gerimis', 'Sedang', 'Lebat'];
+function updateRainIntensity(val) {
+    rainIntensity = parseInt(val);
+    document.getElementById('val-rain').textContent = RAIN_LABELS[rainIntensity];
+}
+
+// Spawn rate (titik jatuh per frame) dan max pool per intensitas
+// Dorsal view: tidak ada garis tetes — hanya titik + riak di permukaan
+const RAIN_CFG = [
+    null,
+    { rate: 0.10, maxDrops: 25,  maxRipples: 40  },  // 1 = gerimis
+    { rate: 0.28, maxDrops: 60,  maxRipples: 100 },  // 2 = sedang
+    { rate: 0.60, maxDrops: 120, maxRipples: 200 },  // 3 = lebat
+];
+
+// ─── RAINDROP (titik jatuh — flash singkat di permukaan) ──────────────────────
+// Dorsal view: tetes tidak terlihat sebagai garis.
+// Yang terlihat hanya kilatan kecil saat tetes menyentuh permukaan.
+class RainDrop {
+    constructor() { this.reset(); }
+    reset() {
+        this.x     = Math.random() * width;
+        this.y     = Math.random() * height;
+        this.life  = 1.0;
+        this.dec   = 0.18 + Math.random() * 0.14;  // hidup ~5–8 frame
+        this.r     = 1.5 + Math.random() * 2;       // radius kilatan
+    }
+    update() {
+        this.life -= this.dec;
+        return this.life <= 0;  // return true = mati
+    }
+    draw() {
+        if (this.life <= 0) return;
+        // Kilatan sangat kecil — "impact" tetes
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(210, 245, 230, ${this.life * 0.55})`;
+        ctx.fill();
+    }
+    isDead() { return this.life <= 0; }
+}
+
+// ─── RAIN RIPPLE (riak melingkar setelah tetes jatuh) ─────────────────────────
+// Dorsal view: riak melebar simetris dari titik jatuh.
+// Dua ring konsentris untuk efek lebih natural.
+class RainRipple {
+    constructor(x, y) {
+        this.x     = x;
+        this.y     = y;
+        this.r     = 1.5;
+        this.maxR  = 22 + Math.random() * 18;
+        this.life  = 1.0;
+        this.dec   = 0.028 + Math.random() * 0.018;
+        this.speed = 0.55 + Math.random() * 0.35;
+        // Ring ke-2 sedikit tertinggal
+        this.r2    = 0;
+        this.r2Lag = 6 + Math.random() * 6;
+    }
+    update() {
+        this.r    += this.speed;
+        this.life -= this.dec;
+        if (this.r > this.r2Lag) this.r2 = Math.max(0, this.r - this.r2Lag);
+    }
+    draw() {
+        if (this.life <= 0) return;
+        const a = this.life * 0.5;
+        // Ring utama
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(200, 240, 220, ${a})`;
+        ctx.lineWidth   = 0.8;
+        ctx.stroke();
+        // Ring ke-2 (lebih tipis, tertinggal)
+        if (this.r2 > 1) {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r2, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(180, 225, 210, ${a * 0.45})`;
+            ctx.lineWidth   = 0.5;
+            ctx.stroke();
+        }
+    }
+    isDead() { return this.life <= 0 || this.r >= this.maxR; }
+}
+
+// ─── UPDATE & DRAW RAIN ────────────────────────────────────────────────────────
+function updateDrawRain() {
+    if (!rainEnabled) return;
+    const cfg = RAIN_CFG[rainIntensity];
+
+    // Spawn titik jatuh baru di posisi acak seluruh permukaan
+    if (rainDrops.length < cfg.maxDrops && Math.random() < cfg.rate) {
+        const drop = new RainDrop();
+        rainDrops.push(drop);
+        // Langsung spawn riak di posisi yang sama
+        if (rainRipples.length < cfg.maxRipples) {
+            rainRipples.push(new RainRipple(drop.x, drop.y));
+        }
+    }
+
+    // Update & gambar titik jatuh
+    for (let i = rainDrops.length - 1; i >= 0; i--) {
+        const dead = rainDrops[i].update();
+        if (dead) { rainDrops.splice(i, 1); continue; }
+        rainDrops[i].draw();
+    }
+
+    // Update & gambar riak hujan
+    for (let i = rainRipples.length - 1; i >= 0; i--) {
+        rainRipples[i].update();
+        rainRipples[i].draw();
+        if (rainRipples[i].isDead()) rainRipples.splice(i, 1);
+    }
+}
+
+// ─── DAY-NIGHT CONTROLS ────────────────────────────────────────────────────────
+function toggleDayCycle() {
+    dayAutoPlay = !dayAutoPlay;
+    document.getElementById('btn-daycycle').textContent = dayAutoPlay ? '⏩ Auto: ON' : '⏸ Auto: OFF';
+}
+
+function setManualDay(val) {
+    dayTime = parseInt(val) / 100;
+    _syncDaySlider();
+}
+
+function updateDaySpeed(val) {
+    daySpeed = parseInt(val);
+    document.getElementById('val-dayspeed').textContent = val + '×';
+}
+
+// Label fase berdasarkan dayTime
+function _dayPhaseLabel(t) {
+    if (t < 0.12 || t >= 0.92) return '🌙 Tengah Malam';
+    if (t < 0.28)               return '🌌 Dini Hari';
+    if (t < 0.38)               return '🌅 Subuh';
+    if (t < 0.55)               return '☀️ Siang';
+    if (t < 0.68)               return '🌤 Sore';
+    if (t < 0.80)               return '🌇 Senja';
+    return                              '🌃 Malam';
+}
+
+// Sync slider & label saat auto bergerak
+function _syncDaySlider() {
+    const sl = document.getElementById('sl-daytime');
+    if (sl) sl.value = Math.round(dayTime * 100);
+    const lbl = document.getElementById('val-daytime');
+    if (lbl) {
+        const phases = ['Tengah Malam','Dini Hari','Subuh','Siang','Sore','Senja','Malam'];
+        const t = dayTime;
+        let ph;
+        if (t < 0.12 || t >= 0.92) ph = 'Tengah Malam';
+        else if (t < 0.28)          ph = 'Dini Hari';
+        else if (t < 0.38)          ph = 'Subuh';
+        else if (t < 0.55)          ph = 'Siang';
+        else if (t < 0.68)          ph = 'Sore';
+        else if (t < 0.80)          ph = 'Senja';
+        else                         ph = 'Malam';
+        lbl.textContent = ph;
+    }
+}
+
+// ── Interpolasi warna langit per fase ──────────────────────────────────────────
+// Setiap keyframe: [dayTime, [r,g,b,alpha]]  — alpha = kekuatan overlay di atas kolam
+const SKY_KEYS = [
+    [0.00, [0,   5,  18, 0.82]],   // tengah malam — biru tua sangat gelap
+    [0.12, [2,   8,  25, 0.78]],   // dini hari
+    [0.28, [12,  20, 45, 0.65]],   // sebelum subuh — biru-ungu
+    [0.35, [80,  45, 20, 0.38]],   // subuh — oranye hangat tipis
+    [0.42, [30,  15,  5, 0.12]],   // pagi — hampir tidak ada overlay
+    [0.55, [0,    0,  0, 0.00]],   // siang — tidak ada overlay (kolam murni)
+    [0.65, [25,  10,  0, 0.10]],   // sore — hangat sangat tipis
+    [0.75, [90,  30,  5, 0.42]],   // senja — oranye-merah
+    [0.82, [20,   5, 30, 0.60]],   // senja akhir — ungu
+    [0.90, [2,    5, 22, 0.74]],   // malam awal
+    [1.00, [0,    5, 18, 0.82]],   // loop ke tengah malam
+];
+
+function _lerpSkyColor(t) {
+    // Cari dua keyframe yang mengapit t
+    let k0 = SKY_KEYS[0], k1 = SKY_KEYS[SKY_KEYS.length - 1];
+    for (let i = 0; i < SKY_KEYS.length - 1; i++) {
+        if (t >= SKY_KEYS[i][0] && t <= SKY_KEYS[i+1][0]) {
+            k0 = SKY_KEYS[i]; k1 = SKY_KEYS[i+1]; break;
+        }
+    }
+    const span = k1[0] - k0[0];
+    const f    = span > 0 ? (t - k0[0]) / span : 0;
+    const c0   = k0[1], c1 = k1[1];
+    return [
+        Math.round(c0[0] + (c1[0] - c0[0]) * f),
+        Math.round(c0[1] + (c1[1] - c0[1]) * f),
+        Math.round(c0[2] + (c1[2] - c0[2]) * f),
+        +(c0[3]  + (c1[3]  - c0[3])  * f).toFixed(3),
+    ];
+}
+
+// ── Gambar overlay siklus waktu di atas semua layer ───────────────────────────
+function drawDayNightOverlay() {
+    // 1. Update dayTime jika auto
+    if (dayAutoPlay) {
+        dayTime = (dayTime + DAY_BASE_RATE * daySpeed) % 1.0;
+        // Sync slider setiap ~30 frame (hemat DOM)
+        if (frameCount % 30 === 0) _syncDaySlider();
+    }
+
+    // 2. Overlay warna langit
+    const [r, g, b, a] = _lerpSkyColor(dayTime);
+    if (a > 0.005) {
+        ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    // 3. Bintang (hanya saat malam: dayTime < 0.30 atau > 0.78)
+    const nightness = _nightness(dayTime);
+    if (nightness > 0.05) {
+        ctx.save();
+        ctx.globalAlpha = nightness * 0.85;
+        for (const s of stars) {
+            const twinkle = 0.5 + 0.5 * Math.sin(time * s.twinkleSpd + s.phase);
+            ctx.globalAlpha = nightness * twinkle * 0.7;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = s.color;
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // 4. Reduksi caustics di malam (via global daylight factor — dibaca di drawCaustics)
+    // (handled inside drawCaustics via daylightFactor())
+
+    // 5. Update indikator di DOM
+    _updateSunIndicator();
+}
+
+// Seberapa "malam" dayTime saat ini (0=siang, 1=tengah malam)
+function _nightness(t) {
+    if (t >= 0.38 && t <= 0.70) return 0;           // siang & sore — tidak ada malam
+    if (t > 0.70 && t < 0.80) return (t - 0.70) / 0.10;  // senja → malam
+    if (t >= 0.80 || t < 0.25) return 1.0;           // penuh malam
+    if (t >= 0.25 && t < 0.38) return 1.0 - (t - 0.25) / 0.13;  // malam → subuh
+    return 0;
+}
+
+// Seberapa "terang" siang (0=gelap, 1=siang penuh) — untuk caustics
+function daylightFactor() {
+    const t = dayTime;
+    if (t >= 0.42 && t <= 0.65) return 1.0;
+    if (t > 0.35 && t < 0.42) return (t - 0.35) / 0.07;
+    if (t > 0.65 && t < 0.75) return 1.0 - (t - 0.65) / 0.10;
+    return 0.0;
+}
+
+// ── Update mini sun/moon indicator di pojok kiri atas ─────────────────────────
+function _updateSunIndicator() {
+    if (!sunCtx) return;
+    if (frameCount % 4 !== 0) return;  // update setiap 4 frame — hemat CPU
+
+    const sc = sunCtx;
+    const sz = 28;
+    sc.clearRect(0, 0, sz, sz);
+
+    const t    = dayTime;
+    const night = _nightness(t);
+    const day   = daylightFactor();
+
+    // Lingkaran arc — posisi objek langit
+    // t=0.35 (subuh) → kiri bawah arc, t=0.55 (siang) → atas, t=0.75 (senja) → kanan bawah
+    const arcT   = Math.max(0, Math.min(1, (t - 0.28) / 0.52));  // 0 di subuh, 1 di senja
+    const angle  = Math.PI + arcT * Math.PI;                       // pi → 2pi (bawah kiri → atas → bawah kanan)
+    const cx     = sz / 2 + Math.cos(angle) * 9;
+    const cy     = sz / 2 + Math.sin(angle) * 7;
+
+    // Track arc tipis
+    sc.beginPath();
+    sc.arc(sz/2, sz/2, 9, Math.PI, 2 * Math.PI);
+    sc.strokeStyle = 'rgba(180,200,180,0.2)';
+    sc.lineWidth = 1;
+    sc.stroke();
+
+    // Gambar objek: matahari atau bulan
+    if (night > 0.5) {
+        // Bulan — sabit
+        sc.beginPath();
+        sc.arc(cx, cy, 4.5, 0, Math.PI * 2);
+        sc.fillStyle = `rgba(220, 230, 255, ${0.5 + night * 0.5})`;
+        sc.fill();
+        sc.beginPath();
+        sc.arc(cx + 2.5, cy, 3.5, 0, Math.PI * 2);
+        sc.fillStyle = 'rgba(5, 10, 30, 0.95)';
+        sc.fill();
+    } else {
+        // Matahari — lingkaran + glow
+        const sunAlpha = 0.4 + day * 0.6;
+        const sunR     = 4.5;
+        // Glow tipis
+        const grd = sc.createRadialGradient(cx, cy, sunR * 0.3, cx, cy, sunR * 2);
+        grd.addColorStop(0, `rgba(255, 220, 80, ${sunAlpha * 0.5})`);
+        grd.addColorStop(1, 'rgba(255,180,0,0)');
+        sc.beginPath();
+        sc.arc(cx, cy, sunR * 2, 0, Math.PI * 2);
+        sc.fillStyle = grd;
+        sc.fill();
+        // Bola matahari
+        sc.beginPath();
+        sc.arc(cx, cy, sunR, 0, Math.PI * 2);
+        sc.fillStyle = `rgba(255, ${180 + Math.round(day*60)}, ${20 + Math.round(day*40)}, ${sunAlpha})`;
+        sc.fill();
+    }
+
+    // Label fase
+    const lblEl = document.getElementById('time-label');
+    if (lblEl) lblEl.textContent = _dayPhaseLabel(t);
+}
+
+// Inisialisasi bintang (dipanggil sekali di init)
+function initStars() {
+    stars = [];
+    const count = 80;
+    for (let i = 0; i < count; i++) {
+        stars.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            r: 0.5 + Math.random() * 1.2,
+            phase: Math.random() * Math.PI * 2,
+            twinkleSpd: 0.8 + Math.random() * 1.5,
+            color: Math.random() > 0.15
+                ? `rgba(220,235,255,1)`
+                : (Math.random() > 0.5 ? `rgba(255,220,200,1)` : `rgba(200,220,255,1)`),
+        });
+    }
+}
+
+class KoiFish {
+    // isLeader = true → ikan utama (follow mouse kuat)
+    // isLeader = false → ikan kawanan (flocking + feeding)
+    constructor(isSilhouette = false, isLeader = false) {
+        this.isSilhouette = isSilhouette;
+        this.isLeader     = isLeader;
+        // Kawanan pakai segmen lebih sedikit → performa lebih ringan
+        this.n   = isSilhouette ? 20 : (isLeader ? SETTINGS.segments : 15);
+        this.len = isSilhouette ? 4  : SETTINGS.segmentLength;
+
+        this.waveTime    = Math.random() * 100;
+        this.scale       = isSilhouette ? (Math.random() * 0.4 + 0.2)
+                         : (isLeader    ? 1.3 : 0.75 + Math.random() * 0.3);
+        this.offsetY     = Math.random() * 500;
+        this.depth       = isSilhouette ? (0.3 + Math.random() * 0.7) : 1.0;
+        this.headAngle   = Math.random() * Math.PI * 2;
+        this.wanderAngle = this.headAngle;
+        this.speed       = isSilhouette ? (0.4 + Math.random() * 0.4) : (isLeader ? 2.5 : 1.8 + Math.random() * 0.6);
+
+        // State wander independen untuk siluet
+        if (isSilhouette) {
+            this._silWander      = this.headAngle;
+            this._silWanderSpeed = 0.008 + Math.random() * 0.006; // seberapa cepat arah berubah
+            this._silTurnNoise   = (Math.random() - 0.5) * 0.04;  // bias arah memutar
+            this._silNoiseTimer  = 0;
+            this._silNoiseChange = 60 + Math.random() * 80;       // interval ganti bias (frame)
+        }
+        this.tintHue     = isLeader ? 0 : (Math.random() * 60 - 30);
+
+        // Inisialisasi points sementara (akan di-overwrite saat spawn)
+        const startX = Math.random() * (window.innerWidth  || 800);
+        const startY = Math.random() * (window.innerHeight || 600);
+        this.points = [];
+        for (let i = 0; i <= this.n; i++) {
+            this.points.push({ x: startX, y: startY });
+        }
+
+        // Spawn dari luar layar
+        if (!isSilhouette) {
+            const side = Math.floor(Math.random() * 4);
+            let spawnX, spawnY;
+            if      (side === 0) { spawnX = -80;           spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = 0; }
+            else if (side === 1) { spawnX = (window.innerWidth || 800) + 80; spawnY = Math.random() * (window.innerHeight || 600); this.headAngle = Math.PI; }
+            else if (side === 2) { spawnX = Math.random() * (window.innerWidth || 800); spawnY = -80; this.headAngle = Math.PI / 2; }
+            else                 { spawnX = Math.random() * (window.innerWidth || 800); spawnY = (window.innerHeight || 600) + 80; this.headAngle = -Math.PI / 2; }
+
+            this.points = [];
+            for (let i = 0; i <= this.n; i++) {
+                this.points.push({
+                    x: spawnX - Math.cos(this.headAngle) * i * this.len,
+                    y: spawnY - Math.sin(this.headAngle) * i * this.len,
+                });
+            }
+        }
+
+        // Feeding mode
+        this.feedTarget  = null;
+        this.feedMode    = false;
+        this.eatCooldown = 0;
+    }
+
+    // Flocking — hanya hitung setiap 3 frame (hemat CPU)
+    _flockSteering() {
+        if (this._flockFrame === undefined) this._flockFrame = 0;
+        this._flockFrame++;
+        if (this._flockFrame % 3 !== 0) return this._lastFlockSteer || 0;
+
+        const head = this.points[0];
+        const RADIUS_SEP   = 80;
+        const RADIUS_FLOCK = 200;
+
+        let sepX = 0, sepY = 0, sepCount = 0;
+        let aliX = 0, aliY = 0, aliCount = 0;
+        let cohX = 0, cohY = 0, cohCount = 0;
+
+        for (const other of fishes) {
+            if (other === this) continue;
+            const ox = other.points[0].x, oy = other.points[0].y;
+            const d  = Math.hypot(ox - head.x, oy - head.y);
+            if (d < RADIUS_SEP && d > 0) {
+                sepX += (head.x - ox) / d;
+                sepY += (head.y - oy) / d;
+                sepCount++;
+            }
+            if (d < RADIUS_FLOCK) {
+                aliX += Math.cos(other.headAngle);
+                aliY += Math.sin(other.headAngle);
+                aliCount++;
+                cohX += ox; cohY += oy; cohCount++;
+            }
+        }
+
+        let steer = 0;
+        if (sepCount > 0) {
+            const a = Math.atan2(sepY / sepCount, sepX / sepCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.6;
+        }
+        if (aliCount > 0) {
+            const a = Math.atan2(aliY / aliCount, aliX / aliCount);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.15;
+        }
+        if (cohCount > 0) {
+            const a = Math.atan2(cohY / cohCount - head.y, cohX / cohCount - head.x);
+            let d = a - this.headAngle;
+            while (d >  Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            steer += d * 0.08;
+        }
+
+        this._lastFlockSteer = steer;
+        return steer;
+    }
+
+    // Cari pelet terdekat yang siap dimakan DAN belum dikejar ikan lain
+    _findNearestPellet() {
+        const head = this.points[0];
+        // Kumpulkan pelet yang sudah diklaim ikan lain
+        const claimed = new Set(
+            fishes.filter(f => f !== this && f.feedTarget).map(f => f.feedTarget)
+        );
+        let best = null, bestDist = Infinity;
+        for (const p of pellets) {
+            if (!p.isReady()) continue;
+            if (claimed.has(p)) continue;  // sudah dikejar ikan lain
+            const d = Math.hypot(p.x - head.x, p.y - head.y);
+            if (d < bestDist) { bestDist = d; best = p; }
+        }
+        return best;
+    }
+
+    update(target) {
+        this.waveTime += 0.08;
+        const head = this.points[0];
+
+        if (this.isSilhouette) {
+            // ── Wander noise: ganti bias belokan secara periodik ──────────────
+            this._silNoiseTimer++;
+            if (this._silNoiseTimer >= this._silNoiseChange) {
+                this._silNoiseTimer  = 0;
+                this._silNoiseChange = 60 + Math.random() * 80;
+                this._silTurnNoise   = (Math.random() - 0.5) * 0.05;
+            }
+
+            // ── Boundary avoidance: belok halus saat mendekati tepi ──────────
+            const avoidMargin = 160;
+            let avoidSteer = 0;
+            if (head.x < avoidMargin)          avoidSteer += (avoidMargin - head.x) / avoidMargin * 0.06;
+            if (head.x > width - avoidMargin)  avoidSteer -= (head.x - (width - avoidMargin)) / avoidMargin * 0.06;
+            if (head.y < avoidMargin)           avoidSteer += (avoidMargin - head.y) / avoidMargin * 0.04;
+            if (head.y > height - avoidMargin)  avoidSteer -= (head.y - (height - avoidMargin)) / avoidMargin * 0.04;
+
+            // ── Akumulasi wander + avoidance ─────────────────────────────────
+            this._silWander += this._silTurnNoise + avoidSteer;
+
+            // ── Lerp headAngle menuju wander secara smooth ────────────────────
+            let silDiff = this._silWander - this.headAngle;
+            while (silDiff >  Math.PI) silDiff -= Math.PI * 2;
+            while (silDiff < -Math.PI) silDiff += Math.PI * 2;
+            this.headAngle += Math.max(-0.012, Math.min(0.012, silDiff));
+            // Sync wander agar tidak lari terlalu jauh
+            this._silWander = this.headAngle;
+
+            head.x += Math.cos(this.headAngle) * this.speed;
+            head.y += Math.sin(this.headAngle) * this.speed;
+
+            // ── Hard wrap hanya jika benar-benar keluar jauh ──────────────────
+            const margin = 200;
+            if (head.x < -margin) head.x = width + margin;
+            if (head.x > width + margin) head.x = -margin;
+            if (head.y < -margin) head.y = height + margin;
+            if (head.y > height + margin) head.y = -margin;
+
+        } else {
+            if (this.eatCooldown > 0) this.eatCooldown--;
+
+            const nearPellet = this._findNearestPellet();
+            let destAngle;
+
+            // --- LOGIKA PEMISAHAN TARGET ---
+            if (nearPellet && this.eatCooldown === 0) {
+                // Semua ikan (Utama & Kawanan) akan mengejar pelet jika ada
+                this.feedMode = true; 
+                this.feedTarget = nearPellet;
+                const dx = this.feedTarget.x - head.x;
+                const dy = this.feedTarget.y - head.y;
+                destAngle = Math.atan2(dy, dx);
+            } else if (this.isLeader) {
+                this.feedMode = false;
+                if (mouseOnScreen) {
+                    // Mouse di layar: ikuti mouse
+                    destAngle = Math.atan2(target.y - head.y, target.x - head.x);
+                } else {
+                    // Mouse di luar: wander bebas seperti kawanan
+                    const flockSteer = this._flockSteering();
+                    this.wanderAngle += (Math.random() - 0.5) * 0.04;
+                    destAngle = this.headAngle + flockSteer * 0.5 + this.wanderAngle * 0.02;
+                }
+            } else {
+                // Kawanan akan berenang bebas (Flocking) tanpa mempedulikan mouse
+                this.feedMode = false;
+                const flockSteer = this._flockSteering();
+                // Kawanan hanya menggunakan steering dari kelompoknya saja
+                destAngle = this.headAngle + flockSteer;
+            }
+
+            // Kecepatan
+            const curSpeed = this.feedMode ? this.speed * 1.55 : this.speed;
+
+            // Logika Makan
+            if (this.feedMode && this.feedTarget) {
+                const dist = Math.hypot(this.feedTarget.x - head.x, this.feedTarget.y - head.y);
+                if (dist < 22) {
+                    this.feedTarget.eaten = true;
+                    this.feedTarget = null;
+                    this.feedMode = false;
+                    this.eatCooldown = 80;
+                    ripples.push(new Ripple(head.x, head.y));
+                }
+            }
+
+            // Pergerakan Sudut
+            let diff = destAngle - this.headAngle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            
+            const turnSpeed = this.isLeader ? 0.045 : 0.035; // Leader sedikit lebih lincah
+            this.headAngle += Math.max(-turnSpeed, Math.min(turnSpeed, diff));
+
+            head.x += Math.cos(this.headAngle) * curSpeed;
+            head.y += Math.sin(this.headAngle) * curSpeed;
+
+            // Boundary Wrap (Muncul dari sisi lain layar)
+            const margin = 100;
+            if (head.x < -margin) head.x = width + margin;
+            if (head.x > width + margin) head.x = -margin;
+            if (head.y < -margin) head.y = height + margin;
+            if (head.y > height + margin) head.y = -margin;
+        }
+
+        // FABRIK / Follower segments
+        for (let i = 1; i < this.points.length; i++) {
+            const p = this.points[i], prev = this.points[i - 1];
+            let angle = Math.atan2(p.y - prev.y, p.x - prev.x);
+            // Wave siluet lebih tenang
+            const waveAmp = this.isSilhouette ? 0.04 : 0.085;
+            angle += Math.sin(this.waveTime - i * 0.2) * waveAmp * (i / this.n);
+            p.x = prev.x + Math.cos(angle) * this.len;
+            p.y = prev.y + Math.sin(angle) * this.len;
+        }
+
+        // Smoothing Pass — hanya untuk leader
+        if (!this.isSilhouette && this.isLeader) {
+            for (let i = 1; i < this.points.length - 1; i++) {
+                this.points[i].x = this.points[i].x * 0.85 + (this.points[i-1].x + this.points[i+1].x) * 0.075;
+                this.points[i].y = this.points[i].y * 0.85 + (this.points[i-1].y + this.points[i+1].y) * 0.075;
+            }
+        }
+
+    }
+
+    // ── Sirip punggung (dorsal fin) — satu-satunya yang di-generate ──────────
+    // Gambar koi sudah punya sirip dada & ekor sendiri, jadi hanya dorsal
+    // yang perlu ditambahkan (tidak ada di top-view photo).
+    // Warna: putih semi-transparan agar menyatu dengan warna ikan.
+    _drawDorsalFin() {
+        const start = 4, end = 14;
+        if (end >= this.points.length) return;
+
+        // Kumpulkan titik tepi punggung
+        const upper = [];
+        for (let i = start; i <= end; i++) {
+            const p    = this.points[i];
+            const prev = this.points[Math.max(0, i - 1)];
+            const next = this.points[Math.min(this.points.length - 1, i + 1)];
+            // tangent lebih halus pakai neighbor
+            const tx = next.x - prev.x, ty = next.y - prev.y;
+            const tlen = Math.hypot(tx, ty) || 1;
+            // normal ke "atas" (sisi punggung — kiri relatif arah gerak)
+            const nx = -ty / tlen, ny = tx / tlen;
+            const t  = (i - start) / (end - start);
+            // profil: naik pelan dari pangkal, puncak di 40%, turun ke ekor
+            const profile = Math.sin(Math.PI * Math.pow(t, 0.7));
+            const h    = profile * 10 * this.scale;
+            const wave = Math.sin(this.waveTime * 1.1 + i * 0.35) * 1.8 * profile;
+            upper.push({ x: p.x + nx * (h + wave), y: p.y + ny * (h + wave) });
+        }
+
+        // Gambar fill membran
+        ctx.beginPath();
+        ctx.moveTo(this.points[start].x, this.points[start].y);
+        // Spine (bawah)
+        for (let i = start + 1; i <= end; i++) ctx.lineTo(this.points[i].x, this.points[i].y);
+        // Tepi atas (balik)
+        for (let i = upper.length - 1; i >= 0; i--) ctx.lineTo(upper[i].x, upper[i].y);
+        ctx.closePath();
+        ctx.fillStyle   = 'rgba(240, 240, 255, 0.18)';
+        ctx.fill();
+
+        // Garis tepi atas sirip
+        ctx.beginPath();
+        ctx.moveTo(upper[0].x, upper[0].y);
+        for (let i = 1; i < upper.length; i++) {
+            const mid = upper[i - 1];
+            ctx.quadraticCurveTo(mid.x, mid.y, (mid.x + upper[i].x) / 2, (mid.y + upper[i].y) / 2);
+        }
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth   = 1 * this.scale;
+        ctx.lineCap     = 'round';
+        ctx.stroke();
+
+        // Urat-urat sirip tipis
+        for (let i = 0; i < upper.length; i += 2) {
+            ctx.beginPath();
+            ctx.moveTo(this.points[start + i].x, this.points[start + i].y);
+            ctx.lineTo(upper[i].x, upper[i].y);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth   = 0.6;
+            ctx.stroke();
+        }
+    }
+
+    _buildBodyPath() {
+        const pts = this.points;
+        const n   = pts.length;
+        const S   = this.scale;
+
+        const maxW = 19 * S; // diperbesar dari 15
+        const bodyProfile = (t) => {
+            if (t < 0.06)  return maxW * 0.50 * (t / 0.06);
+            if (t < 0.15)  return maxW * (0.50 + (t - 0.06) / 0.09 * 0.32); // kepala lebih besar
+            if (t < 0.35)  return maxW * (0.82 + (t - 0.15) / 0.20 * 0.28); // badan lebih lebar
+            if (t < 0.65)  return maxW * (1.00 - (t - 0.35) / 0.30 * 0.38);
+            if (t < 0.88)  return maxW * (0.62 - (t - 0.65) / 0.23 * 0.44);
+            return maxW * 0.18 * (1 - (t - 0.88) / 0.12);
+        };
+
+        const left  = [];
+        const right = [];
+        const normals = [];
+
+        for (let i = 0; i < n; i++) {
+            const t    = i / (n - 1);
+            const p    = pts[i];
+            const prev = pts[Math.max(0, i - 1)];
+            const next = pts[Math.min(n - 1, i + 1)];
+            const tx = next.x - prev.x, ty = next.y - prev.y;
+            const tlen = Math.hypot(tx, ty) || 1;
+            const nx = -ty / tlen, ny = tx / tlen;
+            const w  = bodyProfile(t);
+            left.push ({ x: p.x + nx * w, y: p.y + ny * w });
+            right.push({ x: p.x - nx * w, y: p.y - ny * w });
+            normals.push({ nx, ny, tx: tx / tlen, ty: ty / tlen, t, p });
+        }
+
+        // ── Ekor lumba-lumba: lebar, pipih horizontal, notch dalam ────────
+        const tail     = pts[n - 1];
+        const tailPrev = pts[n - 2];
+        const tax = tail.x - tailPrev.x, tay = tail.y - tailPrev.y;
+        const talen = Math.hypot(tax, tay) || 1;
+        const tfx = tax / talen, tfy = tay / talen;
+        const tnx = -tay / talen, tny = tax / talen;
+
+        const tfLen  = maxW * 2.8;   // lebih panjang
+        const tfSprd = maxW * 1.8;   // jauh lebih lebar — seperti ekor lumba-lumba
+        const tfBase = maxW * 0.20;
+
+        const forkLBase = { x: tail.x + tnx * tfBase,  y: tail.y + tny * tfBase };
+        const forkRBase = { x: tail.x - tnx * tfBase,  y: tail.y - tny * tfBase };
+        // ujung garpu: maju + menyebar lebar ke samping
+        const forkLTip  = { x: tail.x + tfx * tfLen + tnx * tfSprd,  y: tail.y + tfy * tfLen + tny * tfSprd };
+        const forkRTip  = { x: tail.x + tfx * tfLen - tnx * tfSprd,  y: tail.y + tfy * tfLen - tny * tfSprd };
+        // notch: lebih dalam supaya terlihat bercabang jelas
+        const forkNotch = { x: tail.x + tfx * (tfLen * 0.30), y: tail.y + tfy * (tfLen * 0.30) };
+
+        // ── Bangun path utama ─────────────────────────────────────────────
+        ctx.beginPath();
+
+        const headPt   = pts[0];
+        const headPrev = pts[1];
+        const hax = headPt.x - headPrev.x, hay = headPt.y - headPrev.y;
+        const halen = Math.hypot(hax, hay) || 1;
+        const headTip = { x: headPt.x + (hax / halen) * maxW * 0.65, y: headPt.y + (hay / halen) * maxW * 0.65 };
+
+        ctx.moveTo(left[0].x, left[0].y);
+        ctx.quadraticCurveTo(headTip.x, headTip.y, right[0].x, right[0].y);
+
+        for (let i = 1; i < right.length; i++) {
+            const m = right[i - 1];
+            ctx.quadraticCurveTo(m.x, m.y, (m.x + right[i].x) / 2, (m.y + right[i].y) / 2);
+        }
+
+        // Ekor kanan → notch → kiri
+        ctx.lineTo(forkRBase.x, forkRBase.y);
+        ctx.quadraticCurveTo(
+            forkRBase.x + tfx * tfLen * 0.55, forkRBase.y + tfy * tfLen * 0.55,
+            forkRTip.x, forkRTip.y
+        );
+        ctx.quadraticCurveTo(forkNotch.x, forkNotch.y, forkLTip.x, forkLTip.y);
+        ctx.quadraticCurveTo(
+            forkLBase.x + tfx * tfLen * 0.55, forkLBase.y + tfy * tfLen * 0.55,
+            forkLBase.x, forkLBase.y
+        );
+
+        for (let i = left.length - 1; i >= 1; i--) {
+            const m = left[i];
+            ctx.quadraticCurveTo(m.x, m.y, (m.x + left[i - 1].x) / 2, (m.y + left[i - 1].y) / 2);
+        }
+        ctx.closePath();
+
+        // ── Sirip dada kiri & kanan — lebih lebar dan panjang ────────────
+        const pfi = Math.floor(n * 0.20);
+        if (pfi < normals.length) {
+            const pf   = normals[pfi];
+            const finW = maxW * 1.0 * S;  // lebih lebar dari sebelumnya (0.72)
+            const finL = maxW * 1.5 * S;  // lebih panjang
+
+            // Sirip kiri
+            const base1 = { x: pf.p.x + pf.nx * maxW * 0.85, y: pf.p.y + pf.ny * maxW * 0.85 };
+            const base2 = { x: pf.p.x + pf.nx * maxW * 0.35 + pf.tx * maxW * 0.7,
+                            y: pf.p.y + pf.ny * maxW * 0.35 + pf.ty * maxW * 0.7 };
+            const tip   = { x: pf.p.x + pf.nx * (maxW + finW) - pf.tx * finL * 0.35,
+                            y: pf.p.y + pf.ny * (maxW + finW) - pf.ty * finL * 0.35 };
+            ctx.moveTo(base1.x, base1.y);
+            ctx.quadraticCurveTo(tip.x, tip.y, base2.x, base2.y);
+            ctx.closePath();
+
+            // Sirip kanan (mirror)
+            const rb1  = { x: pf.p.x - pf.nx * maxW * 0.85, y: pf.p.y - pf.ny * maxW * 0.85 };
+            const rb2  = { x: pf.p.x - pf.nx * maxW * 0.35 + pf.tx * maxW * 0.7,
+                           y: pf.p.y - pf.ny * maxW * 0.35 + pf.ty * maxW * 0.7 };
+            const rtip = { x: pf.p.x - pf.nx * (maxW + finW) - pf.tx * finL * 0.35,
+                           y: pf.p.y - pf.ny * (maxW + finW) - pf.ty * finL * 0.35 };
+            ctx.moveTo(rb1.x, rb1.y);
+            ctx.quadraticCurveTo(rtip.x, rtip.y, rb2.x, rb2.y);
+            ctx.closePath();
+        }
+
+        return { left, right };
+    }
+
+    draw() {
+        if (this.isSilhouette) {
+            ctx.save();
+            ctx.globalAlpha = 0.12;       // Sedikit lebih tebal agar terlihat
+            ctx.shadowBlur = 20;         // Blur lebih besar untuk kesan dalam
+            ctx.shadowColor = 'black';
+            ctx.fillStyle = '#051208';
+
+            ctx.beginPath(); // MULAI PATH DI LUAR LOOP
+            for (let i = 0; i < this.points.length; i += 2) {
+                const p = this.points[i];
+                // Ukuran dibuat lebih stabil
+                const size = (this.n - i + 2) * 1.1 * this.scale; 
+
+                const angle = i < this.points.length - 1 
+                    ? Math.atan2(this.points[i+1].y - p.y, this.points[i+1].x - p.x) 
+                    : this.headAngle;
+                
+                // Tambahkan bentuk ke path (jangan di-fill dulu)
+                ctx.moveTo(p.x, p.y); 
+                ctx.ellipse(p.x, p.y, size * 2.5, size * 1.5, angle, 0, Math.PI * 2);
+            }
+            ctx.fill(); // ISI SEMUA SEKALIGUS (Ini kuncinya agar tidak blink)
+            ctx.restore();
+
+        } else if (userImage && userImage.complete) {
+            // ── USER UPLOAD: gambar di-clip ke body path ──────────────────
+            ctx.save();
+            ctx.globalAlpha = this.isLeader ? 0.92 : 0.75;
+
+            if (this.isLeader) this._drawDorsalFin();
+
+            this._buildBodyPath();
+            ctx.save();
+            ctx.clip();
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of this.points) {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            }
+            const pad = 16 * this.scale;
+            const bx = minX - pad, by = minY - pad;
+            const bw = (maxX - minX) + pad * 2;
+            const bh = (maxY - minY) + pad * 2;
+            ctx.drawImage(userImage, bx, by, bw, bh);
+
+            ctx.restore(); // lepas clip
+
+            ctx.beginPath();
+            this._buildBodyPath();
+            ctx.strokeStyle = `rgba(255,255,255,${this.isLeader ? 0.12 : 0.07})`;
+            ctx.lineWidth   = 0.8;
+            ctx.stroke();
+
+            ctx.restore();
+            ctx.globalAlpha = 1.0;
+
+        } else if (koiImage.complete && koiImage.naturalWidth > 0) {
+            // ── DEFAULT (koibg2.png): metode slice asli, tanpa masking ────
+            ctx.save();
+            ctx.globalAlpha = this.isLeader ? 0.9 : 0.7;
+
+            if (this.isLeader) this._drawDorsalFin();
+
+            const imgW = koiImage.width, imgH = koiImage.height;
+            const sliceW = imgW / (this.points.length - 1);
+
+            for (let i = 0; i < this.points.length - 1; i++) {
+                const p = this.points[i], pNext = this.points[i + 1];
+                const angle = Math.atan2(pNext.y - p.y, pNext.x - p.x);
+                const dist  = Math.hypot(pNext.x - p.x, pNext.y - p.y);
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(angle);
+                const dw = (dist + 1.5) * this.scale;
+                const dh = imgH * (this.len / (imgW / this.n)) * this.scale;
+                ctx.drawImage(koiImage, i * sliceW, 0, sliceW, imgH, -0.5, -dh / 2, dw, dh);
+                ctx.restore();
+            }
+
+            ctx.restore();
+            ctx.globalAlpha = 1.0;
+        }
+    }
+}
+
+// ─── PLANT CLASS — Dorsal View ─────────────────────────────────────────────────
+// Tanaman air dilihat dari atas: daun oval/bulat melayang di dasar kolam.
+// Tiga jenis: 0=teratai kecil, 1=hydrilla (daun lonjong), 2=rumput air (clump)
+class Plant {
+    constructor(x) {
+        this.x    = x !== undefined ? x : Math.random() * width;
+        this.y    = Math.random() * height;
+        this.type = Math.floor(Math.random() * 3);
+        this.offset = Math.random() * Math.PI * 2;
+        this.rot    = Math.random() * Math.PI * 2;
+        this.rotSpd = (Math.random() - 0.5) * 0.002; // berayun sangat lambat
+
+        const hue   = 85 + Math.random() * 45;
+        const sat   = 28 + Math.random() * 22;
+        const light = 10 + Math.random() * 14;
+        this.color  = `hsl(${hue}, ${sat}%, ${light}%)`;
+        this.colorDark = `hsl(${hue}, ${sat - 8}%, ${light - 4}%)`;
+
+        if (this.type === 0) {
+            // Teratai: beberapa daun bulat mengelilingi titik pusat
+            this.leafCount = 3 + Math.floor(Math.random() * 4);
+            this.leafR     = 12 + Math.random() * 18; // radius daun
+            this.spread    = 18 + Math.random() * 20; // jarak dari pusat
+        } else if (this.type === 1) {
+            // Hydrilla: daun lonjong berjejer
+            this.leafCount = 4 + Math.floor(Math.random() * 4);
+            this.leafLen   = 14 + Math.random() * 18;
+            this.leafW     = 5  + Math.random() * 6;
+        } else {
+            // Rumput air: clump titik-titik oval kecil
+            this.bladeCount = 5 + Math.floor(Math.random() * 6);
+            this.bladeR     = 3 + Math.random() * 4;
+            this.clumpR     = 10 + Math.random() * 14;
+        }
+    }
+
+    draw() {
+        this.rot += this.rotSpd + Math.sin(time * 0.3 + this.offset) * 0.0008;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rot);
+        ctx.globalAlpha = 0.55 + Math.sin(time * 0.2 + this.offset) * 0.06;
+
+        if (this.type === 0) {
+            // Teratai — daun bulat mengelilingi pusat
+            for (let i = 0; i < this.leafCount; i++) {
+                const a = (i / this.leafCount) * Math.PI * 2;
+                const lx = Math.cos(a) * this.spread;
+                const ly = Math.sin(a) * this.spread * 0.7; // gepeng sedikit
+                ctx.beginPath();
+                ctx.ellipse(lx, ly, this.leafR, this.leafR * 0.75, a, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                // Urat daun tipis
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(lx + Math.cos(a) * this.leafR * 0.8, ly + Math.sin(a) * this.leafR * 0.6);
+                ctx.strokeStyle = this.colorDark;
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            }
+            // Titik pusat
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx.fillStyle = this.colorDark;
+            ctx.fill();
+
+        } else if (this.type === 1) {
+            // Hydrilla — daun lonjong tersusun di sepanjang "batang"
+            const totalLen = this.leafCount * (this.leafLen * 0.6);
+            for (let i = 0; i < this.leafCount; i++) {
+                const t  = i / (this.leafCount - 1);
+                const lx = (t - 0.5) * totalLen;
+                const sway = Math.sin(time * 0.4 + this.offset + i * 0.5) * 2;
+                // Selang-seling kiri kanan
+                const side = (i % 2 === 0 ? 1 : -1);
+                ctx.save();
+                ctx.translate(lx, sway);
+                ctx.rotate(side * 0.45);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.leafLen * 0.5, this.leafW * 0.5, 0, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.restore();
+            }
+            // Batang tipis
+            ctx.beginPath();
+            ctx.moveTo(-totalLen / 2, 0);
+            ctx.lineTo(totalLen / 2, 0);
+            ctx.strokeStyle = this.colorDark;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+        } else {
+            // Rumput air — clump oval kecil acak
+            for (let i = 0; i < this.bladeCount; i++) {
+                const a  = (i / this.bladeCount) * Math.PI * 2 + this.offset;
+                const d  = Math.random() * this.clumpR; // tetap karena tidak ada seed — pakai index
+                const bx = Math.cos(a + i * 0.6) * (this.clumpR * 0.6);
+                const by = Math.sin(a + i * 0.6) * (this.clumpR * 0.45);
+                ctx.beginPath();
+                ctx.ellipse(bx, by, this.bladeR, this.bladeR * 0.55, a, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        ctx.restore();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+// ─── PEBBLE CLASS ──────────────────────────────────────────────────────────────
+class Pebble {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = height * 0.6 + Math.random() * height * 0.45;
+        this.rx = 4 + Math.random() * 14;
+        this.ry = this.rx * (0.5 + Math.random() * 0.4);
+        this.angle = Math.random() * Math.PI;
+        // abu-abu kecoklatan natural
+        const l = 14 + Math.random() * 18;
+        const h = 80 + Math.random() * 60;
+        this.fill = `hsl(${h}, 10%, ${l}%)`;
+        this.stroke = `hsl(${h}, 8%, ${l - 5}%)`;
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.rx, this.ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = this.fill;
+        ctx.fill();
+        ctx.strokeStyle = this.stroke;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// ─── ALGAE PATCH ───────────────────────────────────────────────────────────────
+class AlgaePatch {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = height * 0.5 + Math.random() * height * 0.5;
+        this.r = 20 + Math.random() * 50;
+        this.alpha = 0.06 + Math.random() * 0.1;
+    }
+    draw() {
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+        grad.addColorStop(0, `rgba(30, 80, 25, ${this.alpha})`);
+        grad.addColorStop(1, `rgba(30, 80, 25, 0)`);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+    }
+}
+
+// ─── BACKGROUND (cached offscreen) ────────────────────────────────────────────
+function buildStaticBackground() {
+    const off = document.createElement('canvas');
+    off.width = width; off.height = height;
+    const octx = off.getContext('2d');
+
+    // --- Gradien dasar: hijau kekeruhan kolam ---
+    const base = octx.createLinearGradient(0, 0, 0, height);
+    base.addColorStop(0,   '#1c3d1e'); // permukaan: hijau tua
+    base.addColorStop(0.3, '#152e14'); // tengah
+    base.addColorStop(0.65,'#0f2210'); // bawah tengah
+    base.addColorStop(1,   '#080f08'); // dasar: hampir hitam
+
+    octx.fillStyle = base;
+    octx.fillRect(0, 0, width, height);
+
+    // --- Kilau samping (sisi kolam lebih gelap, tengah sedikit terang) ---
+    const vign = octx.createRadialGradient(width/2, height*0.3, 60, width/2, height*0.4, width*0.8);
+    vign.addColorStop(0,   'rgba(40, 80, 35, 0.18)');
+    vign.addColorStop(0.5, 'rgba(20, 50, 20, 0.08)');
+    vign.addColorStop(1,   'rgba(0, 0, 0, 0.55)');
+    octx.fillStyle = vign;
+    octx.fillRect(0, 0, width, height);
+
+    // --- Bintik-bintik sedimen (dikurangi dari 340 → 150) ---
+    octx.globalAlpha = 1;
+    for (let i = 0; i < 150; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pr = 0.4 + Math.random() * 1.4;
+        const pa = 0.04 + Math.random() * 0.12;
+        octx.beginPath();
+        octx.arc(px, py, pr, 0, Math.PI * 2);
+        octx.fillStyle = `rgba(100, 160, 80, ${pa})`;
+        octx.fill();
+    }
+
+    // --- Bebatuan (digambar di dasar) ---
+    pebbles.forEach(p => {
+        octx.save();
+        octx.translate(p.x, p.y);
+        octx.rotate(p.angle);
+        octx.beginPath();
+        octx.ellipse(0, 0, p.rx, p.ry, 0, 0, Math.PI * 2);
+        octx.fillStyle = p.fill;
+        octx.fill();
+        octx.strokeStyle = p.stroke;
+        octx.lineWidth = 0.5;
+        octx.stroke();
+        octx.restore();
+    });
+
+    // --- Algae patch statis ---
+    algaePatches.forEach(a => {
+        const grad = octx.createRadialGradient(a.x, a.y, 0, a.x, a.y, a.r);
+        grad.addColorStop(0, `rgba(30, 80, 25, ${a.alpha})`);
+        grad.addColorStop(1, `rgba(30, 80, 25, 0)`);
+        octx.beginPath();
+        octx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+        octx.fillStyle = grad;
+        octx.fill();
+    });
+
+    return off;
+}
+
+// ─── CAUSTICS (refraksi cahaya permukaan air) ─────────────────────────────────
+function drawCaustics() {
+    const dl = daylightFactor();
+    if (dl < 0.02) return;  // tidak perlu gambar saat malam penuh
+
+    ctx.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 4; i++) {
+        const bx = (width * (i + 0.5) / 4) + Math.sin(time * 0.3 + i * 1.2) * 80;
+        const by = height * 0.25 + Math.cos(time * 0.25 + i * 0.9) * (height * 0.15);
+        const r  = 120 + Math.sin(time + i) * 40;
+        const causticGrad = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+        causticGrad.addColorStop(0,   `rgba(120, 200, 100, ${0.04 * dl})`);
+        causticGrad.addColorStop(0.5, `rgba(80, 160, 60, ${0.02 * dl})`);
+        causticGrad.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.fillStyle = causticGrad;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, r, r * 0.55, Math.sin(time * 0.1 + i) * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    for (let i = 0; i < 6; i++) {
+        const cx = (width * i / 5) + Math.sin(time * 0.6 + i * 2.3) * 120;
+        const cy = height * 0.1 + Math.cos(time * 0.5 + i * 1.7) * (height * 0.22);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 18 + Math.sin(time + i) * 8, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(150, 220, 120, ${0.018 * dl})`;
+        ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// ─── WATER SURFACE SHIMMER ─────────────────────────────────────────────────────
+function drawSurfaceShimmer() {
+    ctx.globalCompositeOperation = 'screen';
+    // Dikurangi dari 6 → 3 garis
+    for (let i = 0; i < 3; i++) {
+        const sy = height * 0.02 + i * height * 0.03 + Math.sin(time * 0.4 + i) * 10;
+        const sx = Math.sin(time * 0.2 + i * 1.5) * width * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo(
+            sx + width * 0.2, sy - 4,
+            sx + width * 0.5, sy + 3,
+            sx + width * 0.75, sy - 2
+        );
+        ctx.lineWidth = 0.8 + Math.sin(time + i) * 0.4;
+        ctx.strokeStyle = `rgba(180, 230, 160, ${0.04 + Math.sin(time * 0.3 + i) * 0.02})`;
+        ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// ─── INIT ──────────────────────────────────────────────────────────────────────
+function init() {
+    width  = canvas.width  = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    mouse.x = width / 2;
+    mouse.y = height / 2;
+
+    // Ikan: 1 leader + 2 kawanan (dikurangi dari 3)
+    fishes = [
+        new KoiFish(false, true),   // leader — follow mouse
+        new KoiFish(false, false),  // kawanan
+        new KoiFish(false, false),  // kawanan
+    ];
+
+    silhouettes = Array.from({ length: 1 }, () => new KoiFish(true, false)); // dikurangi dari 2
+
+    vegetation = [];
+    // Sebar merata di seluruh dasar kolam (dorsal view — tidak ada sisi kiri/kanan)
+    for (let i = 0; i < 22; i++) vegetation.push(new Plant());
+
+    pebbles      = Array.from({ length: 50 }, () => new Pebble()); // dikurangi dari 90
+    algaePatches = Array.from({ length: 10 }, () => new AlgaePatch()); // dikurangi dari 18
+
+    offscreenBg = buildStaticBackground();
+
+    // Cache vignette overlay agar tidak dibuat ulang tiap frame
+    offscreenVignette = document.createElement('canvas');
+    offscreenVignette.width = width; offscreenVignette.height = height;
+    const vctx = offscreenVignette.getContext('2d');
+    const vign2 = vctx.createRadialGradient(width/2, height/2, height*0.25, width/2, height/2, width*0.8);
+    vign2.addColorStop(0, 'rgba(0,0,0,0)');
+    vign2.addColorStop(1, 'rgba(0, 5, 0, 0.45)');
+    vctx.fillStyle = vign2;
+    vctx.fillRect(0, 0, width, height);
+
+    ripples    = [];
+    rainDrops  = [];
+    rainRipples = [];
+    initStars();
+}
+
+// ─── ANIMATE ───────────────────────────────────────────────────────────────────
+let frameCount = 0;
+function animate() {
+    frameCount++;
+    time += 0.018;
+
+    // Gambar background statis (cached)
+    ctx.drawImage(offscreenBg, 0, 0);
+
+    // 1. Vegetasi dasar kolam (dorsal view: semua di BAWAH ikan)
+    vegetation.forEach(v => v.draw());
+
+    // 2. Siluet ikan di kedalaman (di atas vegetasi, di bawah ikan utama)
+    silhouettes.forEach(s => { s.update(); s.draw(); });
+
+    // 3a. Gambar semua ikan KAWANAN dulu (Lapisan Bawah)
+    let leaderFish = null;
+    for (const fish of fishes) {
+        if (!fish.isLeader) {
+            fish.update(mouse);
+            fish.draw();
+        } else {
+            leaderFish = fish;
+        }
+    }
+
+    // 3b. Gambar ikan UTAMA terakhir (Lapisan Atas)
+    if (leaderFish) {
+        leaderFish.update(mouse);
+        leaderFish.draw();
+
+        // Hitung kecepatan leader untuk audio (hanya sekali)
+        const head = leaderFish.points[0];
+        if (!leaderFish._prevHead) leaderFish._prevHead = { x: head.x, y: head.y };
+        const fishSpeed = Math.hypot(head.x - leaderFish._prevHead.x, head.y - leaderFish._prevHead.y);
+        leaderFish._prevHead = { x: head.x, y: head.y };
+        updateAudioSpeed(Math.min(1, fishSpeed / 5));
+    }
+
+    // 4. Pelet makanan
+    pellets = pellets.filter(p => !p.isDead());
+    pellets.forEach(p => { p.update(); p.draw(); });
+
+    // 5. Ripple di posisi mouse (periodik, hanya saat mouse di layar)
+    if (mouseOnScreen && time - lastRippleTime > 0.8) {
+        ripples.push(new Ripple(mouse.x, mouse.y));
+        lastRippleTime = time;
+    }
+    ripples = ripples.filter(r => !r.isDead());
+    ripples.forEach(r => { r.update(); r.draw(); });
+
+    // 6. Caustics — hanya setiap 2 frame
+    if (frameCount % 2 === 0) drawCaustics();
+
+    // 7. Surface shimmer — hanya setiap 3 frame
+    if (frameCount % 3 === 0) drawSurfaceShimmer();
+
+    // 8. Hujan & riak hujan (paling atas — di permukaan air)
+    updateDrawRain();
+
+    // 9. Overlay siklus siang-malam + bintang
+    drawDayNightOverlay();
+
+    // 10. Vignette overlay (cached)
+    ctx.drawImage(offscreenVignette, 0, 0);
+
+    requestAnimationFrame(animate);
+}
+
+// ─── EVENTS ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', init);
+
+let mouseOnScreen = false;
+
+// Mouse — hanya update posisi, JANGAN start audio di sini
+window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    cursorEl.style.left = e.clientX + 'px';
+    cursorEl.style.top  = e.clientY + 'px';
+});
+
+document.addEventListener('mouseenter', () => {
+    mouseOnScreen = true;
+    cursorEl.style.display = 'block';
+});
+
+document.addEventListener('mouseleave', () => {
+    mouseOnScreen = false;
+    cursorEl.style.display = 'none';
+});
+
+// Audio baru boleh start dari click / keydown (interaksi nyata)
+window.addEventListener('click',    startAudioOnce, { once: true });
+window.addEventListener('keydown',  startAudioOnce, { once: true });
+
+canvas.addEventListener('click', e => {
+    // Cek jika jumlah pelet sudah mencapai batas maksimal
+    if (pellets.length >= SETTINGS.maxPellets) return;
+
+    const count = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+        // Cek lagi di dalam loop agar tidak melampaui batas saat spawn berkelompok
+        if (pellets.length < SETTINGS.maxPellets) {
+            const scatter = 18;
+            const px = e.clientX + (Math.random() - 0.5) * scatter;
+            const py = e.clientY + (Math.random() - 0.5) * scatter;
+            pellets.push(new Pellet(px, py));
+            setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        }
+    }
+});
+
+// ── Touch (mobile) ────────────────────────────────────────────────────────────
+function handleTouch(e) {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    cursorEl.style.display = 'none';
+}
+
+canvas.addEventListener('touchstart', e => {
+    startAudioOnce();
+    handleTouch(e);
+    const t = e.touches[0];
+
+    // Tambahkan pengecekan limit di sini
+    if (pellets.length >= SETTINGS.maxPellets) return;
+
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+        if (pellets.length < SETTINGS.maxPellets) {
+            const scatter = 18;
+            const px = t.clientX + (Math.random() - 0.5) * scatter;
+            const py = t.clientY + (Math.random() - 0.5) * scatter;
+            pellets.push(new Pellet(px, py));
+            setTimeout(() => ripples.push(new Ripple(px, py)), i * 80);
+        }
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchmove',  handleTouch, { passive: false });
+canvas.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
+// Gabungkan semua pemicu suara dalam satu event yang diakui browser mobile
+['click', 'touchstart', 'touchend'].forEach(evt => {
+    window.addEventListener(evt, startAudioOnce, { once: true });
+});
+
+init();
+animate();
+</script>
+</body>
+</html>
